@@ -228,6 +228,17 @@ pub struct Inputs {
     /// joins it. Every other row on the page still shows either way
     /// (linking again resets them, so there is always something to see).
     pub online_linked: bool,
+    /// Core has the Auto Backup setting (v2.23.0 and later).
+    pub online_auto_backup: bool,
+    /// The cloud backup schedule is Manual, so Auto Backup does nothing.
+    pub online_backup_manual: bool,
+    /// A backup or restore is running in Core right now.
+    pub online_backup_running: bool,
+    /// Zaparoo Online reported this device's backup protection.
+    pub online_backup_protection: bool,
+    /// A scheduled backup failed or was skipped and none has succeeded
+    /// since.
+    pub online_backup_last_attempt: bool,
     /// `MiSTer`: the resolution and analog-video rows only exist there.
     pub is_mister: bool,
     /// The frontend is already running the native CRT path.
@@ -313,6 +324,7 @@ const TOGGLES: &[&str] = &[
     "onlineRemoteControl",
     "onlineLibrarySync",
     "onlineCloudBackup",
+    "onlineAutoBackup",
     "raLaunchers",
     "raHardcore",
     "raProgressPopups",
@@ -345,6 +357,7 @@ const NAVIGATES: &[&str] = &[
     "pairedControllers",
     "headerLogoImage",
     "onlineManageBackups",
+    "onlineLocalBackups",
     "onlineRemoteActivity",
     "screensaver",
     LANGUAGE_PAGE,
@@ -387,6 +400,10 @@ const INFOS: &[&str] = &[
     "onlineStatus",
     "onlineWarp",
     "onlineRemoteStatus",
+    "onlineBackupActivity",
+    "onlineBackupProtection",
+    "onlineBackupRecoveryPoints",
+    "onlineBackupLastAttempt",
     "raAccount",
     "noPairedDevices",
     "noProfiles",
@@ -804,9 +821,25 @@ pub fn page_rows(page: &str, inputs: &Inputs) -> Vec<Row> {
                 field("onlineRemoteStatus"),
                 field("onlineRemoteActivity"),
                 Row::Header("backup"),
-                field("onlineBackupSchedule"),
-                field("onlineManageBackups"),
             ]);
+            // What is running and how the account stands lead the
+            // section, as reports; the settings and the two lists follow.
+            if inputs.online_backup_running {
+                rows.push(field("onlineBackupActivity"));
+            }
+            if inputs.online_backup_protection {
+                rows.push(field("onlineBackupProtection"));
+                rows.push(field("onlineBackupRecoveryPoints"));
+            }
+            if inputs.online_backup_last_attempt {
+                rows.push(field("onlineBackupLastAttempt"));
+            }
+            rows.push(field("onlineBackupSchedule"));
+            if inputs.online_auto_backup {
+                rows.push(field("onlineAutoBackup"));
+            }
+            rows.push(field("onlineManageBackups"));
+            rows.push(field("onlineLocalBackups"));
             rows
         }
         SYSTEM_PAGE => system_rows(inputs),
@@ -976,8 +1009,15 @@ pub fn needs_online_link(id: &str) -> bool {
             | "onlineLibrarySync"
             | "onlineCloudBackup"
             | "onlineBackupSchedule"
+            | "onlineAutoBackup"
             | "onlineManageBackups"
     )
+}
+
+/// Auto Backup does nothing while the schedule is Manual. It stays on the
+/// page, dimmed, and keeps its value, the same as Core's own TUI.
+pub fn needs_backup_schedule(id: &str) -> bool {
+    id == "onlineAutoBackup"
 }
 
 /// The `RetroAchievements` launcher switch does nothing until
@@ -1574,7 +1614,8 @@ mod tests {
                 "onlineLinkAccount"
                 | "onlineStatus"
                 | "onlineRemoteStatus"
-                | "onlineRemoteActivity" => assert!(!waits, "{}", row.id()),
+                | "onlineRemoteActivity"
+                | "onlineLocalBackups" => assert!(!waits, "{}", row.id()),
                 _ if row.is_field() => assert!(waits, "{}", row.id()),
                 _ => {}
             }
@@ -1609,7 +1650,11 @@ mod tests {
             "the all-features switch leads the Features group"
         );
         let last = seek_navigable(&page, seat, -1);
-        assert_eq!(page[last].id(), "onlineManageBackups");
+        assert_eq!(
+            page[last].id(),
+            "onlineLocalBackups",
+            "local backups need no account and close the page"
+        );
         let activity = seat_of(&page, "onlineRemoteActivity");
         assert_eq!(
             page[seek_navigable(&page, activity, -1)].id(),
@@ -1622,6 +1667,66 @@ mod tests {
                 row.id(),
                 "onlineStatus" | "onlineWarp" | "onlineRemoteStatus"
             )));
+    }
+
+    #[test]
+    fn the_backup_section_shows_what_core_reports() {
+        let base = Inputs {
+            can_link_online: true,
+            online_linked: true,
+            ..Inputs::default()
+        };
+        let backup = |inputs: &Inputs| -> Vec<&'static str> {
+            let rows = page_rows("pageOnline", inputs);
+            let start = rows
+                .iter()
+                .position(|row| *row == Row::Header("backup"))
+                .unwrap_or(rows.len());
+            rows[start + 1..].iter().map(|row| row.id()).collect()
+        };
+        assert_eq!(
+            backup(&base),
+            [
+                "onlineBackupSchedule",
+                "onlineManageBackups",
+                "onlineLocalBackups"
+            ],
+            "a Core without Auto Backup, protection or a running backup"
+        );
+        let full = Inputs {
+            online_auto_backup: true,
+            online_backup_running: true,
+            online_backup_protection: true,
+            online_backup_last_attempt: true,
+            ..base
+        };
+        assert_eq!(
+            backup(&full),
+            [
+                "onlineBackupActivity",
+                "onlineBackupProtection",
+                "onlineBackupRecoveryPoints",
+                "onlineBackupLastAttempt",
+                "onlineBackupSchedule",
+                "onlineAutoBackup",
+                "onlineManageBackups",
+                "onlineLocalBackups",
+            ]
+        );
+        assert_eq!(control("onlineAutoBackup"), Control::Toggle);
+        assert_eq!(control("onlineLocalBackups"), Control::Navigate);
+        for id in [
+            "onlineBackupActivity",
+            "onlineBackupProtection",
+            "onlineBackupRecoveryPoints",
+            "onlineBackupLastAttempt",
+        ] {
+            assert_eq!(control(id), Control::Info, "{id}");
+            assert!(!needs_online_link(id), "{id} only reports");
+        }
+        assert!(needs_online_link("onlineAutoBackup"));
+        assert!(needs_backup_schedule("onlineAutoBackup"));
+        assert!(!needs_backup_schedule("onlineBackupSchedule"));
     }
 
     #[test]

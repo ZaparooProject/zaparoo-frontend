@@ -121,8 +121,16 @@ export enum ScrollAction { up, down, page-prev, page-next }
 export enum ManualState { closed, loading, ready, too-large, failed }
 // How a manual page sits in its box: as wide as it, or wholly inside it.
 export enum ManualFit { width, page }
-// The Online page's two list screens, and what the open one is doing.
-export enum OnlineListKind { none, backups, activity }
+// The Online page's list screens (a local backup's details are a page of
+// the local list), and what the open one is doing.
+export enum OnlineListKind { none, backups, activity, local, local-details }
+// What one row of the Online list is: a backup or log entry, Back up now,
+// a line of a local backup's details (one per category it holds), or
+// Delete.
+export enum OnlineListRowKind { entry, run, created, size, skipped, error, zaparoo, settings, inputs, saves, savestates, delete }
+// Whether a backup or restore runs in Core, and whether a game has paused
+// or slowed it.
+export enum BackupActivity { idle, running, paused, slowed }
 // The RetroAchievements login screen: which field is up, and what the last
 // login attempt came to.
 export enum RaLoginStep { username, password }
@@ -130,7 +138,7 @@ export enum RaLoginStatus { idle, verifying, wrong-credentials, refused, unreach
 // The launcher preference modal's pages, and what each of its rows is.
 export enum LauncherPrefsPage { list, entry, add }
 export enum LauncherPrefsRowKind { launcher, group, add, move, remove }
-export enum OnlineListStatus { ready, loading, failed, empty, backing-up, restoring }
+export enum OnlineListStatus { ready, loading, failed, empty, backing-up, restoring, deleting }
 // Why a list failed to load, when Core's answer says.
 export enum OnlineListFailure { other, unlinked, needs-warp }
 export enum SetupAction { select, start, toggle, change }
@@ -154,7 +162,7 @@ export enum StatusKind {
 }
 export enum Orientation { horizontal, cw, ccw }
 export enum VideoStandard { ntsc, pal }
-export enum DialogKind { none, quit-confirm, quit-blocked, restart-setting, notice, core-version, first-run, hub-full, action-error, unlink-online, restore-online-backup, update-stop, ra-log-out, delete-deck, forget-controller, core-confirm, logo-support, revoke-device, delete-profile, delete-mapping, blank-token }
+export enum DialogKind { none, quit-confirm, quit-blocked, restart-setting, notice, core-version, first-run, hub-full, action-error, unlink-online, restore-online-backup, delete-local-backup, update-stop, ra-log-out, delete-deck, forget-controller, core-confirm, logo-support, revoke-device, delete-profile, delete-mapping, blank-token }
 export enum DialogButton { ok, yes, no, retry, cancel, i-understand, start-media-update, link-account, write-game, choose-game }
 export enum PinPage { entry, admins }
 // The token write panel's buttons (`zaparoo_app::token_batch::Button`).

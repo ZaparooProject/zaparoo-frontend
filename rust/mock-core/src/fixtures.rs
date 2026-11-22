@@ -178,6 +178,14 @@ pub fn settings_response() -> Value {
         "audioMusicVolume": crate::music::settings().0,
         "audioMusicAutoplay": crate::music::settings().1,
         "audioMusicPauseOnLaunch": crate::music::settings().2,
+        // Zaparoo Online's consent settings, all off, so Settings > Online
+        // opens on an unlinked device.
+        "playtimeSyncEnabled": false,
+        "remoteControlEnabled": false,
+        "librarySyncEnabled": false,
+        "backupRemoteEnabled": false,
+        "backupRemoteSchedule": "daily",
+        "backupRemoteAutoBackup": true,
     });
     stored_settings(|stored| {
         if let Some(out) = out.as_object_mut() {

@@ -13,11 +13,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use slint::{ComponentHandle, SharedString};
+use zaparoo_app::backup_status::{Activity, AttemptReason, AttemptStatus, Protection};
 use zaparoo_app::online_link::{self as rules, Started, Tick};
 use zaparoo_app::online_settings::{OnlineFeatureChanges, OnlineFeatures};
 use zaparoo_core::client::{Client, ConnectionState, Notification};
 use zaparoo_core::input_actions::actions;
-use zaparoo_core::media_types::UpdateSettingsParams;
+use zaparoo_core::media_types::{BackupAttempt, BackupProtection, UpdateSettingsParams};
 
 use crate::router::{lock, Ctx};
 use crate::{App, Overlays};
@@ -42,6 +43,36 @@ pub struct Model {
     /// unlinked, connecting, waiting, `not_remote_device`, unavailable,
     /// `credential_rejected`, or error (empty when the fetch itself failed).
     pub remote_state: String,
+    /// Auto Backup, when this Core has the setting.
+    pub auto_backup: Option<bool>,
+    /// Zaparoo Online's protection record for this device, when it sent one.
+    pub protection: Option<BackupProtection>,
+    /// The last scheduled backup that failed or was skipped, while none has
+    /// succeeded since.
+    pub last_attempt: Option<BackupAttempt>,
+    /// Whether a backup or restore runs in Core, and at what pace. Seeded
+    /// from `activeOperation`, kept current by `backup.state`.
+    pub activity: Activity,
+}
+
+/// Core's `backup.state` notification: the pace of the running backup or
+/// restore, or its end.
+pub fn backup_state(notification: &Notification) -> Option<Activity> {
+    if notification.method != "backup.state" {
+        return None;
+    }
+    let flag = |key: &str| {
+        notification
+            .params
+            .get(key)
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+    };
+    Some(Activity::from_event(
+        flag("paused"),
+        flag("throttled"),
+        flag("finished"),
+    ))
 }
 
 /// Core's `auth.link.status` notification: the flow's new status. The
@@ -73,21 +104,24 @@ pub fn refresh(ctx: &Ctx, app: &App) {
     let ctx = ctx.clone();
     let weak = app.as_weak();
     ctx.handle.clone().spawn(async move {
-        let model = match client.settings().await {
+        let (mut model, active_operation) = match client.settings().await {
             Ok(settings) => {
                 // Account identity and Warp come from the backup status
                 // call's remote side, the same as Core's own TUI reads
                 // them. A failure here still leaves every consent setting
                 // and the schedule usable; it only loses the device name
                 // and Warp display for this refresh.
-                let remote = client
+                let status = client
                     .settings_backup_status()
                     .await
                     .inspect_err(|error| {
                         tracing::debug!("reading Online backup status failed: {}", error.message);
                     })
-                    .ok()
-                    .map(|status| status.remote);
+                    .ok();
+                let active_operation = status
+                    .as_ref()
+                    .map(|status| status.active_operation.clone());
+                let remote = status.map(|status| status.remote);
                 // The remote-control poller's own status; soft-fail like
                 // Core's TUI does, since it is one row, not the page.
                 let activity = client
@@ -110,24 +144,35 @@ pub fn refresh(ctx: &Ctx, app: &App) {
                             .await
                             .is_ok_and(|status| status.linked)
                 };
-                Model {
-                    available: settings.playtime_sync_enabled.is_some(),
-                    linked,
-                    device_name: remote.as_ref().and_then(|r| r.device_name.clone()),
-                    warp_availability: remote.map(|r| r.availability).unwrap_or_default(),
-                    features: OnlineFeatures {
-                        remote_control: settings.remote_control_enabled.unwrap_or(false),
-                        play_history: settings.playtime_sync_enabled.unwrap_or(false),
-                        library: settings.library_sync_enabled.unwrap_or(false),
-                        cloud_backup: settings.backup_remote_enabled.unwrap_or(false),
+                let (protection, last_attempt) = remote
+                    .as_ref()
+                    .map(|r| (r.protection.clone(), r.last_attempt.clone()))
+                    .unwrap_or_default();
+                (
+                    Model {
+                        available: settings.playtime_sync_enabled.is_some(),
+                        linked,
+                        device_name: remote.as_ref().and_then(|r| r.device_name.clone()),
+                        warp_availability: remote.map(|r| r.availability).unwrap_or_default(),
+                        auto_backup: settings.backup_remote_auto_backup,
+                        protection,
+                        last_attempt,
+                        activity: Activity::Idle,
+                        features: OnlineFeatures {
+                            remote_control: settings.remote_control_enabled.unwrap_or(false),
+                            play_history: settings.playtime_sync_enabled.unwrap_or(false),
+                            library: settings.library_sync_enabled.unwrap_or(false),
+                            cloud_backup: settings.backup_remote_enabled.unwrap_or(false),
+                        },
+                        backup_schedule: settings.backup_remote_schedule.unwrap_or_default(),
+                        remote_state: activity.map_or_else(String::new, |a| a.status.state),
                     },
-                    backup_schedule: settings.backup_remote_schedule.unwrap_or_default(),
-                    remote_state: activity.map_or_else(String::new, |a| a.status.state),
-                }
+                    active_operation,
+                )
             }
             Err(error) => {
                 tracing::debug!("reading Online settings failed: {}", error.message);
-                Model::default()
+                (Model::default(), None)
             }
         };
         // The header logo entitlement: only a successful answer changes
@@ -147,13 +192,21 @@ pub fn refresh(ctx: &Ctx, app: &App) {
                 )
             });
         let _ = weak.upgrade_in_event_loop(move |app| {
-            {
+            crate::settings::keep_seat(&ctx, &app, || {
                 let mut shared = lock(&ctx.shared);
+                // The status says whether something runs; the pace a
+                // `backup.state` already reported stands. No status answer
+                // leaves the activity as it was.
+                model.activity = match active_operation {
+                    Some(operation) => shared.online.activity.seeded(&operation),
+                    None => shared.online.activity,
+                };
                 shared.online = model;
                 if let Some(branding) = branding {
                     shared.branding = branding;
                 }
-            }
+            });
+            crate::online_list::publish_activity(&ctx, &app);
             crate::settings::enforce_branding(&ctx, &app);
             crate::settings::reseat(&ctx, &app);
             crate::settings::refresh(&ctx, &app);
@@ -167,6 +220,61 @@ pub fn status_value(model: &Model) -> &'static str {
         "linked"
     } else {
         "unlinked"
+    }
+}
+
+/// "running", "paused", or "slowed": the pace of the backup or restore
+/// running in Core. Only read while one runs.
+pub fn activity_value(model: &Model) -> &'static str {
+    match model.activity {
+        Activity::Paused => "paused",
+        Activity::Slowed => "slowed",
+        Activity::Running | Activity::Idle => "running",
+    }
+}
+
+/// The protection Zaparoo Online records, as the view's token.
+pub fn protection_value(model: &Model) -> &'static str {
+    let state = model
+        .protection
+        .as_ref()
+        .map_or(Protection::Unknown, |p| Protection::from_token(&p.state));
+    match state {
+        Protection::Never => "never",
+        Protection::Removed => "removed",
+        Protection::Failed => "failed",
+        Protection::Stale => "stale",
+        Protection::Protected => "protected",
+        Protection::Unknown => "unknown",
+    }
+}
+
+/// Why the last scheduled backup failed or was skipped, as the view's
+/// token. A reason this frontend does not know says only how it ended.
+pub fn attempt_value(model: &Model) -> &'static str {
+    let Some(attempt) = &model.last_attempt else {
+        return "";
+    };
+    match AttemptReason::from_token(&attempt.reason) {
+        AttemptReason::Busy => "busy",
+        AttemptReason::Offline => "offline",
+        AttemptReason::NotAvailable => "not_available",
+        AttemptReason::Interrupted => "interrupted",
+        AttemptReason::QuotaExceeded => "quota_exceeded",
+        AttemptReason::RateLimited => "rate_limited",
+        AttemptReason::FilesChanged => "files_changed",
+        AttemptReason::RequiresNewerCore => "requires_newer_core",
+        AttemptReason::BackupTooLarge => "backup_too_large",
+        AttemptReason::PayloadTooLarge => "payload_too_large",
+        AttemptReason::MissingObjects => "missing_objects",
+        AttemptReason::ServerError => "server_error",
+        AttemptReason::NetworkError => "network_error",
+        AttemptReason::Error | AttemptReason::Unknown => {
+            match AttemptStatus::from_token(&attempt.status) {
+                AttemptStatus::Skipped => "skipped",
+                AttemptStatus::Failed | AttemptStatus::Unknown => "failed",
+            }
+        }
     }
 }
 
@@ -353,6 +461,50 @@ pub fn set_backup_schedule(ctx: &Ctx, app: &App, schedule: &str) {
                     let mut shared = lock(&ctx.shared);
                     if shared.online.backup_schedule == schedule {
                         shared.online.backup_schedule = previous;
+                    }
+                }
+                crate::settings::refresh(&ctx, &app);
+                crate::router::report_action_error(&ctx, &app, "online", "");
+            });
+        }
+    });
+}
+
+/// Flip Auto Backup. The row shows the new value at once and goes back if
+/// Core refuses.
+pub fn toggle_auto_backup(ctx: &Ctx, app: &App) {
+    let next = {
+        let mut shared = lock(&ctx.shared);
+        let Some(current) = shared
+            .online
+            .auto_backup
+            .filter(|_| shared.online.available)
+        else {
+            return;
+        };
+        shared.online.auto_backup = Some(!current);
+        !current
+    };
+    crate::settings::refresh(ctx, app);
+    let client = ctx.store.client();
+    let ctx = ctx.clone();
+    let weak = app.as_weak();
+    ctx.handle.clone().spawn(async move {
+        let result = client
+            .settings_update(UpdateSettingsParams {
+                backup_remote_auto_backup: Some(next),
+                ..Default::default()
+            })
+            .await;
+        if let Err(error) = result {
+            tracing::warn!("changing Auto Backup failed: {}", error.message);
+            let _ = weak.upgrade_in_event_loop(move |app| {
+                {
+                    // Only while the row still shows this request's value:
+                    // a later flip that Core accepted must stand.
+                    let mut shared = lock(&ctx.shared);
+                    if shared.online.auto_backup == Some(next) {
+                        shared.online.auto_backup = Some(!next);
                     }
                 }
                 crate::settings::refresh(&ctx, &app);
@@ -618,6 +770,18 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
 }
 
 /// Watch for link progress Core pushes.
+/// A running backup or restore changed pace, or ended. The Online page's
+/// activity row and the list panel's working status follow it; an end
+/// re-reads the status, which carries the outcome.
+fn observe_backup_state(ctx: &Ctx, app: &App, activity: Activity) {
+    crate::settings::keep_seat(ctx, app, || lock(&ctx.shared).online.activity = activity);
+    crate::online_list::publish_activity(ctx, app);
+    crate::settings::refresh(ctx, app);
+    if !activity.is_running() {
+        refresh(ctx, app);
+    }
+}
+
 pub fn bind_events(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
     // Ask as soon as Core is reachable, and again after every reconnect,
     // so the Online page opens on rows that are already settled instead of
@@ -645,6 +809,13 @@ pub fn bind_events(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
         loop {
             match rx.recv().await {
                 Ok(notification) => {
+                    if let Some(activity) = backup_state(&notification) {
+                        let ctx = ctx.clone();
+                        let _ = weak.upgrade_in_event_loop(move |app| {
+                            observe_backup_state(&ctx, &app, activity);
+                        });
+                        continue;
+                    }
                     let Some(status) = link_status(&notification) else {
                         continue;
                     };

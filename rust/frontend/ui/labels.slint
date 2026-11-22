@@ -473,6 +473,7 @@ export global DialogLabels {
         if (kind == DialogKind.unlink-online) { return @tr("Unlink Online account?"); }
         if (kind == DialogKind.ra-log-out) { return @tr("Log out of RetroAchievements?"); }
         if (kind == DialogKind.restore-online-backup) { return @tr("Restore this backup?"); }
+        if (kind == DialogKind.delete-local-backup) { return @tr("Delete this backup?"); }
         if (kind == DialogKind.update-stop) { return @tr("Stop update?"); }
         if (kind == DialogKind.delete-deck) { return @tr("Delete deck?"); }
         if (kind == DialogKind.forget-controller) { return @tr("Forget controller?"); }
@@ -494,6 +495,7 @@ export global DialogLabels {
         if (kind == DialogKind.restart-setting) { return @tr("This setting needs a frontend restart to take effect."); }
         if (kind == DialogKind.unlink-online) { return @tr("This device stops backing up and syncing with your Zaparoo Online account. Local play history stays on this device."); }
         if (kind == DialogKind.restore-online-backup) { return @tr("This replaces this device's settings and data with the backup from {}. Zaparoo restarts when it finishes.", detail); }
+        if (kind == DialogKind.delete-local-backup) { return @tr("The local backup from {} is deleted from this device. This cannot be undone.", detail); }
         if (kind == DialogKind.update-stop) { return @tr("An update is still running. Leaving this screen stops it."); }
         if (kind == DialogKind.ra-log-out) { return @tr("Games stop earning achievements until you log in again."); }
         if (kind == DialogKind.delete-deck) { return @tr("{} and the list of what is in it are deleted. This cannot be undone.", detail); }

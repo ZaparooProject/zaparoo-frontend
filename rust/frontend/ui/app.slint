@@ -8,8 +8,8 @@
 // logic; forward orchestration lives in the router.
 
 import { Theme, Backdrop, GlassCard, Sizing, Motion, Layout } from "theme.slint";
-import { PickSignal, ScreensaverStyle, SaverBouncing, SaverLook, CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, CreditsPage, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, InspectorState, ContentState, RowKind, ControlKind, DeviceValue, PairFailure, PairSearch, PadFill, HeaderPad, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, HeaderLogo, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind, PinPage, PinError, CardWriteButton, PickerPane, PickerPurpose } from "state_types.slint";
-export { PickSignal, ScreensaverStyle, SaverBouncing, SaverLook, CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, CreditsPage, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, InspectorState, ContentState, RowKind, ControlKind, DeviceValue, PairFailure, PairSearch, PadFill, HeaderPad, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, HeaderLogo, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind, PinPage, PinError, CardWriteButton, PickerPane, PickerPurpose }
+import { PickSignal, ScreensaverStyle, SaverBouncing, SaverLook, CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, CreditsPage, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, InspectorState, ContentState, RowKind, ControlKind, DeviceValue, PairFailure, PairSearch, PadFill, HeaderPad, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListRowKind, BackupActivity, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, StateTokens, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, HeaderLogo, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind, PinPage, PinError, CardWriteButton, PickerPane, PickerPurpose } from "state_types.slint";
+export { PickSignal, ScreensaverStyle, SaverBouncing, SaverLook, CoreUiKind, MenuRole, UserFlag, RenamePurpose, ContextPage, KeyKind, SearchZone, SearchPane, SearchScope, FileBrowserMode, CreditsPage, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, Screen, GamesMode, SystemsMode, SettingsPage, InspectorState, ContentState, RowKind, ControlKind, DeviceValue, PairFailure, PairSearch, PadFill, HeaderPad, ActionStatus, SetupKind, SetupPicker, ScopeKind, LogPhase, PairPhase, OnlineLinkPhase, OnlineListKind, OnlineListRowKind, BackupActivity, OnlineListStatus, OnlineListFailure, PressOwner, StatusKind, Orientation, VideoStandard, ScrollAction, SetupAction, AppCue, BootStatus, DisabledReason, HeaderLogo, DialogKind, DialogButton, ErrorKind, ManualState, ManualFit, RaLoginStep, RaLoginStatus, LauncherPrefsPage, LauncherPrefsRowKind, PinPage, PinError, CardWriteButton, PickerPane, PickerPurpose }
 import { FastScrollRail, GlyphSource, Brand, Buttons, HelpEntry, Status, HeaderBar, StatusLine, ProgressTrack, WaitCue, TopStatusStrip, FooterIndicator, ActiveLabel, HelpBar, SectionHeader, Divider, CheckBox, ScrollCue, ModalShell, QrPlate, StateCue } from "chrome.slint";
 import { GridCell, MarqueeCaption, PressableSurface, Tile, PagedGridView, PageStrip } from "tiles.slint";
 import { ScrollOffset, SelectionCursor, SelectionClip, FocusCursor } from "focus.slint";
@@ -115,11 +115,14 @@ export struct MenuEntry {
     role: MenuRole,
 }
 
-// One row of the Online page's list modal: Rust composes the text.
+// One row of the Online page's list modal: Rust composes the times and
+// sizes, the view words what each kind of row is.
 export struct OnlineListRow {
+    kind: OnlineListRowKind,
     id: string,
     label: string,
     detail: string,
+    count: int,
     enabled: bool,
     this-device: bool,
 }
@@ -785,6 +788,10 @@ export global Overlays {
     in-out property <OnlineListStatus> online-list-status: OnlineListStatus.ready;
     in-out property <OnlineListFailure> online-list-failure: OnlineListFailure.other;
     in-out property <string> online-list-note: "";
+    // A local backup's details page title: its time.
+    in-out property <string> online-list-title: "";
+    // The pace of the backup or restore running in Core.
+    in-out property <BackupActivity> backup-activity: BackupActivity.idle;
     in-out property <[OnlineListRow]> online-list-rows: [];
     in-out property <int> online-list-index: 0;
     // Settings > Library's launcher preference: one modal, three pages of
@@ -975,8 +982,8 @@ component SettingsScreen inherits Rectangle {
     // under the cursor.
     property <length> hint-h: SettingsView.hint-height;
     property <string> hint: root.index < 0 || root.index >= root.rows.length ? ""
-        : !root.rows[root.index].enabled && SettingsLabels.disabled-reason(root.rows[root.index].id) != ""
-            ? SettingsLabels.disabled-reason(root.rows[root.index].id)
+        : !root.rows[root.index].enabled && SettingsLabels.disabled-reason(root.rows[root.index]) != ""
+            ? SettingsLabels.disabled-reason(root.rows[root.index])
             : SettingsLabels.row-description(root.rows[root.index], Shell.is-mister);
     property <length> hint-y: self.card-h - self.pad - self.hint-h;
     property <length> hint-rule-y: self.hint-y - self.pad - Sizing.stroke(1);
@@ -2367,12 +2374,15 @@ component OnlineListModal inherits ModalShell {
     property <[OnlineListRow]> entries: Overlays.online-list-rows;
     property <int> current-index: Overlays.online-list-index;
     property <bool> backups: Overlays.online-list-kind == OnlineListKind.backups;
+    property <bool> local: Overlays.online-list-kind == OnlineListKind.local;
+    property <bool> details: Overlays.online-list-kind == OnlineListKind.local-details;
     // A wait (loading the list, a backup or a restore running) takes the
     // status row only once its cue is up; a failure or an empty list has
     // it at once.
     property <bool> waiting: Overlays.online-list-status == OnlineListStatus.loading
         || Overlays.online-list-status == OnlineListStatus.backing-up
-        || Overlays.online-list-status == OnlineListStatus.restoring;
+        || Overlays.online-list-status == OnlineListStatus.restoring
+        || Overlays.online-list-status == OnlineListStatus.deleting;
     property <bool> has-status: wait.shown
         || Overlays.online-list-status == OnlineListStatus.failed
         || Overlays.online-list-status == OnlineListStatus.empty;
@@ -2390,9 +2400,30 @@ component OnlineListModal inherits ModalShell {
         return @tr("Could not load this. Check the network connection and try again.");
     }
     pure function row-label(row: OnlineListRow) -> string {
-        return row.id == "run" ? @tr("Back up now") : row.label;
+        if (row.kind == OnlineListRowKind.run) { return @tr("Back up now"); }
+        if (row.kind == OnlineListRowKind.created) { return @tr("Created"); }
+        if (row.kind == OnlineListRowKind.size) { return @tr("Size"); }
+        if (row.kind == OnlineListRowKind.skipped) { return @tr("Skipped"); }
+        if (row.kind == OnlineListRowKind.error) { return @tr("Error"); }
+        if (row.kind == OnlineListRowKind.zaparoo) { return @tr("Zaparoo"); }
+        if (row.kind == OnlineListRowKind.settings) { return @tr("Settings"); }
+        if (row.kind == OnlineListRowKind.inputs) { return @tr("Inputs"); }
+        if (row.kind == OnlineListRowKind.saves) { return @tr("Saves"); }
+        if (row.kind == OnlineListRowKind.savestates) { return @tr("Save states"); }
+        if (row.kind == OnlineListRowKind.delete) { return @tr("Delete backup…"); }
+        return row.label;
+    }
+    pure function files(count: int) -> string {
+        return @tr("{n} file" | "{n} files" % count);
     }
     pure function row-detail(row: OnlineListRow) -> string {
+        // Core names no files when it only knows the backup is partial.
+        if (row.kind == OnlineListRowKind.skipped) { return row.count > 0 ? root.files(row.count) : @tr("Some files"); }
+        if (row.kind == OnlineListRowKind.zaparoo || row.kind == OnlineListRowKind.settings
+            || row.kind == OnlineListRowKind.inputs || row.kind == OnlineListRowKind.saves
+            || row.kind == OnlineListRowKind.savestates) {
+            return @tr("{}, {}", root.files(row.count), row.detail);
+        }
         // The only row that cannot be accepted is a snapshot a newer
         // Zaparoo made; it says so where its detail already is.
         if (!row.enabled) { return @tr("{}, needs a newer Zaparoo", row.detail); }
@@ -2403,7 +2434,10 @@ component OnlineListModal inherits ModalShell {
     property <length> status-h: root.has-status ? vp.row-h + (root.entries.length > 0 ? root.pad : 0px) : 0px;
     property <length> list-y: root.content-y + root.note-h + root.status-h;
 
-    title: root.backups ? @tr("Cloud backups") : @tr("Remote activity");
+    title: root.backups ? @tr("Cloud backups")
+        : root.local ? @tr("Local backups")
+        : root.details ? Overlays.online-list-title
+        : @tr("Remote activity");
     panel-width: ListPanel.width;
     content-height: root.note-h + root.status-h + vp.height;
 
@@ -2424,9 +2458,20 @@ component OnlineListModal inherits ModalShell {
         height: vp.row-h;
         glyph: Sizing.font-body;
         waiting: root.waiting;
-        text: Overlays.online-list-status == OnlineListStatus.backing-up ? @tr("Backing up…")
-            : Overlays.online-list-status == OnlineListStatus.restoring ? @tr("Restoring…")
-            : (root.backups ? @tr("Loading backups…") : @tr("Loading activity…"));
+        // A game can pause or slow a running backup or restore; the
+        // status says so rather than looking stuck.
+        text: Overlays.online-list-status == OnlineListStatus.backing-up
+            ? (Overlays.backup-activity == BackupActivity.paused ? @tr("Backup paused while a game runs")
+                : Overlays.backup-activity == BackupActivity.slowed ? @tr("Backing up slowly while a game runs…")
+                : @tr("Backing up…"))
+            : Overlays.online-list-status == OnlineListStatus.restoring
+            ? (Overlays.backup-activity == BackupActivity.paused ? @tr("Restore paused while a game runs")
+                : Overlays.backup-activity == BackupActivity.slowed ? @tr("Restoring slowly while a game runs…")
+                : @tr("Restoring…"))
+            : Overlays.online-list-status == OnlineListStatus.deleting ? @tr("Deleting…")
+            : root.details ? @tr("Loading backup…")
+            : (root.backups || root.local) ? @tr("Loading backups…")
+            : @tr("Loading activity…");
     }
     if root.has-status && !wait.shown: Text {
         x: root.pad;
@@ -2437,7 +2482,9 @@ component OnlineListModal inherits ModalShell {
         vertical-alignment: center;
         wrap: word-wrap;
         text: Overlays.online-list-status == OnlineListStatus.failed ? root.failure-text()
-            : (root.backups ? @tr("No cloud backups yet.") : @tr("Nothing has run through remote control yet."));
+            : root.backups ? @tr("No cloud backups yet.")
+            : root.local ? @tr("No local backups yet.")
+            : @tr("Nothing has run through remote control yet.");
         color: Overlays.online-list-status == OnlineListStatus.failed ? Theme.accent : Theme.text-label;
         font-size: Sizing.font-body;
     }
@@ -2448,7 +2495,7 @@ component OnlineListModal inherits ModalShell {
         width: root.content-width;
         count: root.entries.length;
         current: root.current-index;
-        scope: "online-list:" + (root.backups ? "backups" : "activity");
+        scope: "online-list:" + (root.backups ? "backups" : root.local ? "local" : root.details ? "local-details" : "activity");
         max-viewport: Sizing.pct-h(46);
         press-held: PressFeedback.active(PressOwner.online-list, root.current-index);
 
@@ -2462,7 +2509,7 @@ component OnlineListModal inherits ModalShell {
             // Muted, never hidden: a snapshot this Core cannot restore
             // still lists.
             enabled: row.enabled;
-            accent: row.id == "run";
+            accent: row.kind == OnlineListRowKind.run || row.kind == OnlineListRowKind.delete;
             fill-top: vp.fill-top;
             fill-bottom: vp.fill-bottom;
             fill: vp.fill;
@@ -4073,11 +4120,34 @@ export component App inherits Window {
                 : [{ buttons: ["ButtonA"], label: @tr("Select") }, { buttons: ["ButtonB"], label: @tr("Cancel") }];
         }
         if (Overlays.online-list-open) {
-            if (Overlays.online-list-kind == OnlineListKind.backups && Overlays.online-list-rows.length > 0
+            // Back from a backup's details is a page back; a delete
+            // running there takes Back out of the list instead.
+            if (Overlays.online-list-kind == OnlineListKind.local-details
+                && Overlays.online-list-status != OnlineListStatus.deleting) {
+                if (Overlays.online-list-rows.length > 0
+                    && Overlays.online-list-index >= 0 && Overlays.online-list-index < Overlays.online-list-rows.length
+                    && Overlays.online-list-rows[Overlays.online-list-index].kind == OnlineListRowKind.delete) {
+                    return [
+                        { buttons: ["Dpad"], label: @tr("Move") },
+                        { buttons: ["ButtonA"], label: @tr("Select") },
+                        { buttons: ["ButtonB"], label: @tr("Back") },
+                    ];
+                }
+                if (Overlays.online-list-rows.length > 1) {
+                    return [
+                        { buttons: ["Dpad"], label: @tr("Move") },
+                        { buttons: ["ButtonB"], label: @tr("Back") },
+                    ];
+                }
+                return [{ buttons: ["ButtonB"], label: @tr("Back") }];
+            }
+            if ((Overlays.online-list-kind == OnlineListKind.backups || Overlays.online-list-kind == OnlineListKind.local)
+                && Overlays.online-list-rows.length > 0
                 && Overlays.online-list-index >= 0 && Overlays.online-list-index < Overlays.online-list-rows.length
                 && Overlays.online-list-rows[Overlays.online-list-index].enabled
                 && Overlays.online-list-status != OnlineListStatus.backing-up
-                && Overlays.online-list-status != OnlineListStatus.restoring) {
+                && Overlays.online-list-status != OnlineListStatus.restoring
+                && Overlays.online-list-status != OnlineListStatus.deleting) {
                 return [
                     { buttons: ["Dpad"], label: @tr("Move") },
                     { buttons: ["ButtonA"], label: @tr("Select") },
