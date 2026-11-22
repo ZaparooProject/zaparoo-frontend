@@ -1,0 +1,73 @@
+// Zaparoo Frontend
+// Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+//
+// "Who is playing?": the profiles a fresh start offers, then the shared
+// profile. Pure view. The driver is `src/profile_picker.rs` and the rules
+// are `zaparoo_app::profile_picker`.
+
+import { Backdrop, GlassCard, Sizing, Layout } from "theme.slint";
+import { TopStatusStrip } from "chrome.slint";
+import { GridCell } from "tiles.slint";
+import { BrowseList } from "browse_list.slint";
+
+export global ProfilePickerView {
+    in-out property <[GridCell]> list-rows;
+    in-out property <int> list-view-top: 0;
+    in-out property <int> list-scroll-top: 0;
+    in-out property <int> list-sel: -1;
+    in-out property <bool> list-glide: true;
+    in-out property <int> list-step-ms: 0;
+    in-out property <length> card-x: 0px;
+    in-out property <length> card-y: 0px;
+    in-out property <length> card-width: 0px;
+    in-out property <length> card-height: 0px;
+    in-out property <length> row-height: 0px;
+}
+
+export global ProfilePickerInput {
+    callback row-hovered(int);
+    callback row-clicked(int);
+    callback wheel(int);
+}
+
+export component ProfilePickerScreen inherits Rectangle {
+    TopStatusStrip {
+        x: 0;
+        y: Sizing.header-bottom + Layout.top-margin;
+        height: Layout.strip-height;
+        slot-margin: Layout.slot-margin;
+        title: @tr("Who is playing?");
+        show-page-counter: false;
+        visible: Layout.top-strip-visible;
+    }
+
+    GlassCard {
+        x: ProfilePickerView.card-x;
+        y: ProfilePickerView.card-y;
+        width: ProfilePickerView.card-width;
+        height: ProfilePickerView.card-height;
+        radius: Layout.card-radius;
+    }
+
+    BrowseList {
+        x: ProfilePickerView.card-x;
+        y: ProfilePickerView.card-y;
+        width: ProfilePickerView.card-width;
+        height: ProfilePickerView.card-height;
+        show-chrome: true;
+        glass: Backdrop.glass;
+        rows: ProfilePickerView.list-rows;
+        model-top: ProfilePickerView.list-view-top;
+        glide: ProfilePickerView.list-glide;
+        step: ProfilePickerView.list-step-ms * 1ms;
+        scroll-top: ProfilePickerView.list-scroll-top;
+        scope: "profile-picker";
+        selected: ProfilePickerView.list-sel;
+        focus-ready: true;
+        row-height: ProfilePickerView.row-height;
+        row-hovered(i) => { ProfilePickerInput.row-hovered(i); }
+        row-clicked(i) => { ProfilePickerInput.row-clicked(i); }
+        wheel(delta) => { ProfilePickerInput.wheel(delta); }
+    }
+}

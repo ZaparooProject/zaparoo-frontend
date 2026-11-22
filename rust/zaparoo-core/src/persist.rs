@@ -684,6 +684,11 @@ pub struct SettingsState {
     pub mouse_enabled: bool,
     #[serde(default)]
     pub reduce_motion: bool,
+    /// Open on "Who is playing?" at a fresh start (a power-on on `MiSTer`,
+    /// every start on desktop). A state file from before the setting
+    /// existed reads as off.
+    #[serde(default)]
+    pub choose_profile_at_startup: bool,
     /// The Menu chip row above 240p. Off, the Menu button opens the Menu
     /// list at every tier. A state file from before the setting existed
     /// keeps the row.
@@ -815,6 +820,7 @@ impl Default for SettingsState {
             button_layout: default_button_layout(),
             mouse_enabled: default_mouse_enabled(),
             reduce_motion: false,
+            choose_profile_at_startup: false,
             show_menu_row: default_show_menu_row(),
             show_help_bar: default_show_help_bar(),
             background_image: String::new(),
@@ -1255,6 +1261,7 @@ mod tests {
                 button_layout: "b".into(),
                 mouse_enabled: false,
                 reduce_motion: true,
+                choose_profile_at_startup: true,
                 show_menu_row: true,
                 show_help_bar: true,
                 background_image: "/media/fat/Wallpapers".into(),
@@ -1409,6 +1416,8 @@ resolution = "1920x1080"
         assert_eq!(state.favorite_systems, FavoriteSystemsState::default());
         // reduce_motion absent from an older state file defaults to false.
         assert!(!state.settings.reduce_motion);
+        // choose_profile_at_startup absent from an older state file is off.
+        assert!(!state.settings.choose_profile_at_startup);
         // mister_names absent from an older state file defaults to false.
         assert!(!state.settings.mister_names);
         // swap_confirm_cancel absent from an older state file defaults to false.

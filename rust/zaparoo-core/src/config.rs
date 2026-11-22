@@ -196,6 +196,7 @@ pub struct SettingsConfig {
     pub button_layout: Option<String>,
     pub mouse_enabled: Option<bool>,
     pub reduce_motion: Option<bool>,
+    pub choose_profile_at_startup: Option<bool>,
     pub show_menu_row: Option<bool>,
     pub show_help_bar: Option<bool>,
     pub background_image: Option<String>,
@@ -255,6 +256,7 @@ pub struct SettingsMirror<'a> {
     pub button_layout: &'a str,
     pub mouse_enabled: bool,
     pub reduce_motion: bool,
+    pub choose_profile_at_startup: bool,
     pub show_menu_row: bool,
     pub show_help_bar: bool,
     pub background_image: &'a str,
@@ -450,6 +452,7 @@ struct RawSettings {
     button_layout: Option<String>,
     mouse_enabled: Option<bool>,
     reduce_motion: Option<bool>,
+    choose_profile_at_startup: Option<bool>,
     show_menu_row: Option<bool>,
     show_help_bar: Option<bool>,
     background_image: Option<String>,
@@ -634,6 +637,7 @@ fn settings_config_from_raw(raw: RawSettings) -> SettingsConfig {
         button_layout: trim_opt(raw.button_layout),
         mouse_enabled: raw.mouse_enabled,
         reduce_motion: raw.reduce_motion,
+        choose_profile_at_startup: raw.choose_profile_at_startup,
         show_menu_row: raw.show_menu_row,
         show_help_bar: raw.show_help_bar,
         background_image: trim_opt(raw.background_image),
@@ -906,6 +910,11 @@ pub fn save_settings_mirror(path: &Path, mirror: SettingsMirror<'_>) -> Result<(
     set_str(settings, "button_layout", mirror.button_layout.trim());
     set_bool(settings, "mouse_enabled", mirror.mouse_enabled);
     set_bool(settings, "reduce_motion", mirror.reduce_motion);
+    set_bool(
+        settings,
+        "choose_profile_at_startup",
+        mirror.choose_profile_at_startup,
+    );
     set_bool(settings, "show_menu_row", mirror.show_menu_row);
     set_bool(settings, "show_help_bar", mirror.show_help_bar);
     set_background_settings(settings, &mirror);
@@ -1204,6 +1213,7 @@ mod tests {
             button_layout: "a",
             mouse_enabled: true,
             reduce_motion: false,
+            choose_profile_at_startup: false,
             show_menu_row: true,
             show_help_bar: true,
             background_image: "",
@@ -1824,6 +1834,7 @@ mod tests {
                 button_layout: "b",
                 mouse_enabled: false,
                 reduce_motion: true,
+                choose_profile_at_startup: false,
                 show_menu_row: false,
                 show_help_bar: false,
                 background_image: "/media/fat/Wallpapers/a.jpg",
@@ -1925,6 +1936,7 @@ mod tests {
                 button_layout: "a",
                 mouse_enabled: true,
                 reduce_motion: false,
+                choose_profile_at_startup: false,
                 show_menu_row: true,
                 show_help_bar: true,
                 background_image: "",
@@ -1997,6 +2009,7 @@ mod tests {
             button_layout: "c",
             mouse_enabled: false,
             reduce_motion: false,
+            choose_profile_at_startup: false,
             show_menu_row: true,
             show_help_bar: true,
             background_image: "",

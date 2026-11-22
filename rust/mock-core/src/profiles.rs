@@ -4,7 +4,9 @@
 //
 // Profiles, paired clients and the global playtime limits. Two profiles to
 // start with: an admin with PIN 1234 and a member without one; nobody is
-// active. A switch card for verify-by-scan is the admin's.
+// active. A switch card for verify-by-scan is the admin's. The kiosk lock
+// is off; `MOCK_CORE_KIOSK=locked` (or `locked-fixed`, with profile
+// switching off) reports it locked.
 
 use serde_json::{json, Value};
 use std::sync::{Mutex, MutexGuard, PoisonError};
@@ -37,6 +39,31 @@ fn with<T>(f: impl FnOnce(&mut State) -> T) -> T {
         STATE.lock().unwrap_or_else(PoisonError::into_inner);
     let state = guard.get_or_insert_with(seed);
     f(state)
+}
+
+/// `kiosk`: off unless `MOCK_CORE_KIOSK` says it is locked.
+fn kiosk_json() -> Value {
+    let seal = json!({"sealed": false, "unsealed": ["hostMenus"]});
+    let switching = match std::env::var("MOCK_CORE_KIOSK").as_deref() {
+        Ok("locked") => true,
+        Ok("locked-fixed") => false,
+        _ => return json!({"state": "off", "seal": seal}),
+    };
+    json!({
+        "state": "locked",
+        "settings": {
+            "preset": if switching { "family" } else { "public" },
+            "deviceUnlock": true,
+            "defaultContentMode": "allowed",
+            "profileSwitching": switching,
+            "extensionCard": switching,
+            "downloads": "none",
+            "idleReset": !switching,
+            "idleTimeout": 600,
+            "unlockDuration": 300
+        },
+        "seal": seal
+    })
 }
 
 fn seed() -> State {
@@ -82,6 +109,7 @@ pub fn route(method: &str, params: &Value, notifier: &Notifier) -> Option<Result
         "profiles.switch" => Some(switch(params, notifier)),
         "profiles.verify" => Some(verify(params)),
         "profiles.verify.cancel" => Some(Ok(Value::Null)),
+        "kiosk" => Some(Ok(kiosk_json())),
         "profiles.new" => Some(new(params)),
         "profiles.update" => Some(update(params)),
         "profiles.delete" => Some(delete(params, notifier)),

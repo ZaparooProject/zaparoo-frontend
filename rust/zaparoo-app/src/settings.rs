@@ -304,6 +304,7 @@ const TOGGLES: &[&str] = &[
     "misterNames",
     "debugLogging",
     "reduceMotion",
+    "chooseProfileAtStartup",
     "showMenuRow",
     "showHelpBar",
     "crtEnabled",
@@ -633,7 +634,8 @@ fn game_version_rows(inputs: &Inputs) -> Vec<Row> {
 }
 
 /// Profiles: who is playing, picked from the list, and a way to leave;
-/// then the rows that manage them.
+/// then the rows that manage them, and whether a start asks who is
+/// playing.
 fn profiles_rows(inputs: &Inputs) -> Vec<Row> {
     let mut rows: Vec<Row> = if inputs.profiles == 0 {
         vec![field("noProfiles")]
@@ -647,6 +649,7 @@ fn profiles_rows(inputs: &Inputs) -> Vec<Row> {
         Row::Header("manage"),
         field("newProfile"),
         field(PLAYTIME_LIMITS_PAGE),
+        field("chooseProfileAtStartup"),
     ]);
     rows
 }
@@ -1103,6 +1106,7 @@ pub fn gated_row(id: &str) -> bool {
             | "encryption"
             | "errorReporting"
             | "newProfile"
+            | "chooseProfileAtStartup"
             | "readersScanMode"
             | "readersScanExitDelay"
             | "readersScanIgnoreSystems"
@@ -2499,6 +2503,7 @@ mod profile_rules_tests {
             "pairDevice",
             "encryption",
             "newProfile",
+            "chooseProfileAtStartup",
             "mapToken",
         ] {
             assert!(gated_row(row), "{row}");
@@ -2649,6 +2654,9 @@ mod profile_rules_tests {
         );
         assert_eq!(some[1].item(), Some(1));
         assert_eq!(some[2].id(), "leaveProfile");
+        let last = some.last().copied();
+        assert_eq!(last.map(Row::id), Some("chooseProfileAtStartup"));
+        assert_eq!(last.and_then(Row::control), Some(Control::Toggle));
 
         let edit = |inputs: &Inputs| -> Vec<&str> {
             page_rows(PROFILE_EDIT_PAGE, inputs)

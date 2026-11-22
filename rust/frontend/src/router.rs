@@ -190,6 +190,10 @@ pub struct Shared {
     pub credits: crate::credits::Model,
     /// "Choose a game", while it is open.
     pub game_picker: crate::game_picker::Model,
+    /// "Who is playing?" on a fresh start.
+    pub profile_picker: crate::profile_picker::Model,
+    /// Core's kiosk lock, from `kiosk` and its `kiosk.state` notification.
+    pub kiosk: zaparoo_core::profile_types::KioskState,
     /// The music player.
     pub music: crate::music::Model,
     /// Ticket for the per-game launcher read, so a picker only opens
@@ -414,6 +418,8 @@ impl Shared {
             file_browser: crate::file_browser::Model::default(),
             credits: crate::credits::Model::default(),
             game_picker: crate::game_picker::Model::default(),
+            profile_picker: crate::profile_picker::Model::default(),
+            kiosk: zaparoo_core::profile_types::KioskState::default(),
             music: crate::music::Model::default(),
             game_launcher_seq: 0,
             persist,
@@ -1657,6 +1663,7 @@ fn screen_action(ctx: &Ctx, app: &App, action: &str) {
         crate::Screen::About => about_action(ctx, app, action),
         crate::Screen::Credits => crate::credits::handle_action(ctx, app, action),
         crate::Screen::GamePicker => crate::game_picker::handle_action(ctx, app, action),
+        crate::Screen::ProfilePicker => crate::profile_picker::handle_action(ctx, app, action),
         crate::Screen::Update => crate::update::handle_action(ctx, app, action),
         crate::Screen::None => {}
     }
@@ -1960,6 +1967,7 @@ pub(crate) fn relayout(ctx: &Ctx, app: &App) {
     crate::file_browser::relayout(ctx, app);
     crate::credits::relayout(ctx, app);
     crate::game_picker::relayout(ctx, app);
+    crate::profile_picker::relayout(ctx, app);
     crate::music::relayout(ctx, app);
 }
 
@@ -2474,6 +2482,9 @@ pub(crate) fn store_active_profile(
     if changed && app.global::<crate::Shell>().get_active_screen() == crate::Screen::Settings {
         crate::settings::reseat(ctx, app);
         crate::settings::refresh(ctx, app);
+    }
+    if changed {
+        crate::profile_picker::active_changed(ctx, app);
     }
 }
 

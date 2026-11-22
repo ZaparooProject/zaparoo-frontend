@@ -35,9 +35,9 @@ use crate::media_types::{
     VersionResult,
 };
 use crate::profile_types::{
-    ActiveProfile, ClientsResult, NewProfileParams, PlaytimeLimits, Profile, ProfilesResult,
-    SwitchProfileParams, UpdatePlaytimeLimitsParams, UpdateProfileParams, VerifiedProfile,
-    VerifyProfileParams,
+    ActiveProfile, ClientsResult, KioskState, NewProfileParams, PlaytimeLimits, Profile,
+    ProfilesResult, SwitchProfileParams, UpdatePlaytimeLimitsParams, UpdateProfileParams,
+    VerifiedProfile, VerifyProfileParams,
 };
 use crate::readers_types::{
     DriversResult, MappingsResult, NewMappingParams, PortsResult, TokenResolution,
@@ -1540,6 +1540,15 @@ impl Client {
         #[derive(Serialize)]
         struct P {}
         let val = self.call("profiles.active", &P {}).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// The kiosk lock. A Core without kiosk mode answers with an error,
+    /// which callers read as off.
+    pub async fn kiosk(&self) -> Result<KioskState, ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        let val = self.call("kiosk", &P {}).await?;
         serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
     }
 
