@@ -88,6 +88,7 @@ mod pairing;
 mod perf;
 mod pin;
 mod playtime_access;
+mod profile_picker;
 mod qr;
 mod ra_login;
 mod rename;
@@ -403,6 +404,9 @@ fn merge_config_settings(
     }
     s.mouse_enabled = c.mouse_enabled.unwrap_or(s.mouse_enabled);
     s.reduce_motion = c.reduce_motion.unwrap_or(s.reduce_motion);
+    s.choose_profile_at_startup = c
+        .choose_profile_at_startup
+        .unwrap_or(s.choose_profile_at_startup);
     s.show_menu_row = c.show_menu_row.unwrap_or(s.show_menu_row);
     s.show_help_bar = c.show_help_bar.unwrap_or(s.show_help_bar);
     merge_image_settings(s, c);
@@ -723,6 +727,20 @@ fn run_application(
     // first frame. A first start has nothing to restore, so its Hub paints
     // optimistically and fills in when Core answers.
     let boot_curtain = boot_curtain_for(&persisted.active_screen, has_saved_state);
+    // "Who is playing?" on a fresh start: a power-on on MiSTer, every
+    // process start on desktop, the host's say-so when hosted. The
+    // curtain holds until Core has said who there is.
+    #[cfg(feature = "mister")]
+    let fresh_start = !has_saved_state;
+    #[cfg(all(not(feature = "mister"), not(feature = "hosted")))]
+    let fresh_start = true;
+    #[cfg(feature = "hosted")]
+    let fresh_start = options.fresh_start;
+    let picker_owed = zaparoo_app::profile_picker::may_show(
+        persisted.settings.choose_profile_at_startup,
+        fresh_start,
+    );
+    let boot_curtain = boot_curtain || picker_owed;
 
     #[cfg(not(feature = "hosted"))]
     let args: Vec<String> = std::env::args().collect();
@@ -1106,6 +1124,7 @@ fn run_application(
     file_browser::bind(&ctx, &app);
     credits::bind(&ctx, &app);
     game_picker::bind(&ctx, &app);
+    profile_picker::bind(&ctx, &app);
     music::bind(&ctx, &app);
     settings::bind_input(&ctx, &app);
     media_setup::bind_input(&ctx, &app);
@@ -1119,7 +1138,12 @@ fn run_application(
     let hub_seed_task = hub_covers::seed_startup(&ctx, &app);
     bind_resume(&ctx, &app, &client);
 
-    restore_core_independent(&ctx, &app);
+    if picker_owed {
+        // Settings, About and Credits come back after the pick too.
+        profile_picker::owe(&mut lock(&ctx.shared));
+    } else {
+        let _ = restore_core_independent(&ctx, &app);
+    }
     {
         let ctx = ctx.clone();
         router::on_restore_finished(move |app| {
@@ -1193,16 +1217,18 @@ fn run_application(
 /// Settings/About are core-independent: restore them immediately
 /// instead of holding them behind the first catalog Ready, the way
 /// `MainLayout`'s `coreIndependentStartupVisible` path paints them.
-fn restore_core_independent(ctx: &Arc<Ctx>, app: &App) {
+pub(crate) fn restore_core_independent(ctx: &Ctx, app: &App) -> bool {
     let target = lock(&ctx.shared).persist.active_screen.clone();
-    if matches!(target.as_str(), "settings" | "about" | "credits") {
-        lock(&ctx.shared).restore_pending = false;
-        match target.as_str() {
-            "settings" => settings::enter(ctx, app, EntryMode::Restore),
-            "about" => router::enter_about(ctx, app, EntryMode::Restore),
-            _ => credits::enter(ctx, app, EntryMode::Restore),
-        }
+    if !matches!(target.as_str(), "settings" | "about" | "credits") {
+        return false;
     }
+    lock(&ctx.shared).restore_pending = false;
+    match target.as_str() {
+        "settings" => settings::enter(ctx, app, EntryMode::Restore),
+        "about" => router::enter_about(ctx, app, EntryMode::Restore),
+        _ => credits::enter(ctx, app, EntryMode::Restore),
+    }
+    true
 }
 
 /// Walk the customization folder off the event loop and repaint what
@@ -1514,6 +1540,21 @@ fn bind_core_state(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
                     };
                     let _ = weak.upgrade_in_event_loop(move |app| {
                         router::store_active_profile(&ctx, &app, result.profile);
+                    });
+                }
+                "kiosk.state" => {
+                    let Ok(state) = serde_json::from_value::<
+                        zaparoo_core::profile_types::KioskState,
+                    >(notification.params) else {
+                        continue;
+                    };
+                    let _ = weak.upgrade_in_event_loop(move |app| {
+                        {
+                            let mut shared = lock(&ctx.shared);
+                            shared.kiosk = state;
+                            shared.kiosk_seq = shared.kiosk_seq.wrapping_add(1);
+                        }
+                        profile_picker::kiosk_changed(&ctx, &app);
                     });
                 }
                 "run.failed" => {
@@ -2236,7 +2277,11 @@ fn apply_catalog(ctx: &Arc<Ctx>, app: &App, status: &ResourceStatus<CatalogData>
                 hub_refresh::schedule(ctx, app);
             }
             // The curtain stays up until the restored screen is complete.
-            if was_restore_pending {
+            // A start owed the profile picker opens on it first; the
+            // restore runs after the pick.
+            if first_catalog && profile_picker::owed(&lock(&ctx.shared)) {
+                profile_picker::begin(ctx, app, was_restore_pending);
+            } else if was_restore_pending {
                 restore_screens(ctx, app);
             } else if first_catalog {
                 finish_hub_restore(ctx, app);
@@ -2253,7 +2298,16 @@ fn apply_catalog(ctx: &Arc<Ctx>, app: &App, status: &ResourceStatus<CatalogData>
             // The error is on the Hub, so show it. A restore that would
             // run on a later catalog is dropped: by then the Hub is in use.
             if app.global::<Shell>().get_boot_curtain() {
-                lock(&ctx.shared).restore_pending = false;
+                let retired = {
+                    let mut shared = lock(&ctx.shared);
+                    shared.restore_pending = false;
+                    profile_picker::retire(&mut shared)
+                };
+                // Settings, About and Credits waited for the picker; they
+                // need no Core, so they still come back.
+                if retired {
+                    let _ = restore_core_independent(ctx, app);
+                }
                 router::finish_restore(app);
             }
         }
@@ -2269,8 +2323,15 @@ fn give_up_boot_restore(ctx: &Arc<Ctx>, app: &App) {
     if !app.global::<Shell>().get_boot_curtain() {
         return;
     }
-    lock(&ctx.shared).restore_pending = false;
+    let retired = {
+        let mut shared = lock(&ctx.shared);
+        shared.restore_pending = false;
+        profile_picker::retire(&mut shared)
+    };
     hub::render(ctx, app);
+    if retired {
+        let _ = restore_core_independent(ctx, app);
+    }
     router::finish_restore(app);
 }
 
@@ -2403,7 +2464,7 @@ fn restore_screens(ctx: &Arc<Ctx>, app: &App) {
 }
 
 /// The Decks and Top played screens restore straight from the Hub.
-fn restore_collection(ctx: &Arc<Ctx>, app: &App, target: &str) {
+fn restore_collection(ctx: &Ctx, app: &App, target: &str) {
     match target {
         "decks" => decks::enter(ctx, app, EntryMode::Restore),
         "top-played" => games::enter_top_played(ctx, app, EntryMode::Restore),
@@ -2412,7 +2473,7 @@ fn restore_collection(ctx: &Arc<Ctx>, app: &App, target: &str) {
 }
 
 /// Settings and the screens it opens restore without a parent screen.
-fn restore_settings(ctx: &Arc<Ctx>, app: &App, target: &str) {
+fn restore_settings(ctx: &Ctx, app: &App, target: &str) {
     match target {
         "about" => router::enter_about(ctx, app, EntryMode::Restore),
         "credits" => credits::enter(ctx, app, EntryMode::Restore),
@@ -2420,7 +2481,9 @@ fn restore_settings(ctx: &Arc<Ctx>, app: &App, target: &str) {
     }
 }
 
-fn restore_target(ctx: &Arc<Ctx>, app: &App) {
+/// Route to the saved screen: a cold-start restore, or the start that
+/// opened on the profile picker carrying on after the pick.
+pub(crate) fn restore_target(ctx: &Ctx, app: &App) {
     let (target, category, system_id, entered_from_hub) = {
         let shared = lock(&ctx.shared);
         (
@@ -2720,6 +2783,7 @@ mod tests {
             button_layout: "style_b".to_string(),
             mouse_enabled: false,
             reduce_motion: true,
+            choose_profile_at_startup: true,
             show_menu_row: false,
             show_help_bar: false,
             background_image: "/media/fat/Wallpapers".to_string(),

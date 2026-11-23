@@ -40,6 +40,8 @@ export { FileBrowserView, FileBrowserInput }
 import { CreditsView, CreditsInput, CreditsBlock, CreditsScreen } from "credits.slint";
 import { GamePickerView, GamePickerInput, PickerSourcesView, PickerGamesView, GamePickerScreen } from "game_picker.slint";
 export { GamePickerView, GamePickerInput, PickerSourcesView, PickerGamesView }
+import { ProfilePickerView, ProfilePickerInput, ProfilePickerScreen } from "profile_picker.slint";
+export { ProfilePickerView, ProfilePickerInput }
 export { CreditsView, CreditsInput, CreditsBlock }
 import { MusicView, MusicInput, MusicScreen, MusicButton, MusicLabels } from "music.slint";
 export { MusicView, MusicInput, MusicButton }
@@ -3564,6 +3566,7 @@ component RouteScreen inherits Rectangle {
 
     if root.screen-token == Screen.credits: CreditsScreen {}
     if root.screen-token == Screen.game-picker: GamePickerScreen {}
+    if root.screen-token == Screen.profile-picker: ProfilePickerScreen {}
 
     if root.screen-token == Screen.update: UpdateScreen {}
 
@@ -3662,6 +3665,7 @@ export component App inherits Window {
             return !GamePickerView.two-panes && GamePickerView.pane != PickerPane.sources
                 ? GamePickerView.source-name : @tr("Choose a game");
         }
+        if (Shell.active-screen == Screen.profile-picker) { return @tr("Who is playing?"); }
         if (Shell.active-screen == Screen.credits) {
             return CreditsView.page == CreditsPage.reading ? CreditsView.title : @tr("Credits");
         }
@@ -4604,6 +4608,13 @@ export component App inherits Window {
                 { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
                 { buttons: ["ButtonA"], label: @tr("Open") },
                 { buttons: ["ButtonB"], label: @tr("Back") },
+            ];
+        }
+        if (Shell.active-screen == Screen.profile-picker && !Shell.transitioning) {
+            return [
+                { buttons: ["DpadUp", "DpadDown"], label: @tr("Move") },
+                { buttons: ["ButtonA"], label: @tr("Choose") },
+                { buttons: ["ButtonB"], label: @tr("Skip") },
             ];
         }
         if (Shell.active-screen == Screen.search && !Shell.transitioning) {

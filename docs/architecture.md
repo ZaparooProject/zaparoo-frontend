@@ -372,13 +372,32 @@ half-filled list.
   and Core staying unreachable for that same bound (`give_up_boot_restore`).
 - A Hub start also waits for the Resume tile's answer (`hub::resume_settled`),
   under the same bound.
+- With Settings > Profiles > Choose profile at startup on, a fresh start opens
+  on "Who is playing?" (`profile_picker.rs`) before anything is restored. A
+  fresh start is a power-on on MiSTer (no saved state, which lives in `/tmp`),
+  every process start on desktop and SteamOS, and `host::Options::fresh_start`
+  when hosted. The curtain is held for it even where the saved screen would
+  paint without Core. On the first catalog, `profile_picker::begin` asks Core
+  for `profiles`, `profiles.active`, `kiosk` and `settings` under the curtain;
+  the picker's commit lifts it. With no profile to pick, a kiosk lock that
+  keeps the active profile, or a kiosk state Core could not report (a Core
+  without the method reads as unlocked), the start goes on as if the setting
+  were off. A launch policy that could not be read hides Shared profile. A
+  `kiosk.state` or `profiles.active` notification newer than the fetch wins
+  over its reply. A
+  pick switches through the PIN panel's flows (`pin::switch_then`,
+  `pin::leave_then`); once Core has switched, or on Back, the saved screen
+  restores as a forward route from the picker (`restore_target`), or the Hub
+  shows. Core staying unreachable, a catalog error and Cancel under the
+  curtain drop the picker for that start (`profile_picker::retire`): a saved
+  Settings, About or Credits still comes back, otherwise the Hub shows.
 - The saved screen keeps naming the restore target until it commits, so a kill
   mid-restore comes back to the same place. Startup notices open only after the
   curtain lifts.
 - Some places are never restored as they were. The RetroAchievements login
   screen comes back as Settings. The Game picker ("Choose a game") never writes
   itself as the saved screen, so a kill while it is open comes back to the
-  screen that opened it. Settings keeps only the Readers, Profiles and System
+  screen that opened it. The profile picker is never the saved screen either. Settings keeps only the Readers, Profiles and System
   pages' row (`persist.settings_page`); a page under one of them, gated ones
   included (Mappings, a reader, a profile's edit page), is kept as the row on
   that page that opens it, so an admin unlock, which lives in memory only, is

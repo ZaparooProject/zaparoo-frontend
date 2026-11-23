@@ -303,6 +303,45 @@ fn mirror_game_picker(primary: &App, crt: &App) {
     target.set_row_height(g.row_height as f32);
 }
 
+/// "Who is playing?" at the CRT head's own geometry, showing the slice of
+/// the HDMI list around its focus.
+fn mirror_profile_picker(primary: &App, crt: &App) {
+    let source = primary.global::<crate::ProfilePickerView>();
+    let target = crt.global::<crate::ProfilePickerView>();
+    let sizing = crt.global::<crate::Sizing>();
+    let scene = crate::sizing::Scene::of(
+        crt,
+        f64::from(sizing.get_screen_width()),
+        f64::from(sizing.get_screen_height()),
+        true,
+    );
+    let g = crate::games::list_geometry_for(
+        &scene.inputs(),
+        false,
+        0,
+        zaparoo_app::media_list::list_visible_rows(true, false),
+    );
+    let capacity = i32::try_from(g.visible_rows.max(1)).unwrap_or(1);
+    let (rows, selected, _) = project_page(
+        &source.get_list_rows(),
+        &target.get_list_rows(),
+        source.get_list_sel(),
+        capacity,
+    );
+    if let Some(rows) = rows {
+        target.set_list_rows(rows);
+    }
+    set_if_changed!(target, get_list_sel => set_list_sel, selected);
+    set_if_changed!(target, get_list_view_top => set_list_view_top, 0);
+    set_if_changed!(target, get_list_scroll_top => set_list_scroll_top, 0);
+    set_if_changed!(target, get_list_glide => set_list_glide, false);
+    target.set_card_x(g.card_x as f32);
+    target.set_card_y(g.card_y as f32);
+    target.set_card_width(g.card_width as f32);
+    target.set_card_height(g.card_height as f32);
+    target.set_row_height(g.row_height as f32);
+}
+
 /// The music player at the CRT head's own geometry: the now-playing card
 /// and its list solved for the CRT scene, showing the slice of the HDMI
 /// list around the focus.
@@ -953,6 +992,7 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
     mirror_file_browser(primary, crt);
     mirror_credits(primary, crt);
     mirror_game_picker(primary, crt);
+    mirror_profile_picker(primary, crt);
     mirror_music(primary, crt);
 
     let source = primary.global::<GamesView>();

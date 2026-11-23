@@ -26,6 +26,11 @@ use crate::{App, PinError, PinPage, PinView};
 /// What runs once the gate opens. It stays on the event loop thread.
 type Continuation = Box<dyn FnOnce(&Ctx, &App)>;
 
+/// What runs once a switch asked for by `switch_then` or `leave_then`
+/// ends: `true` once Core switched, `false` when it refused a switch that
+/// had no panel open to show why. A panel the user closes drops it.
+type Switched = Box<dyn FnOnce(&Ctx, &App, bool)>;
+
 /// What a correct PIN unlocks.
 enum Purpose {
     /// The admin gate: run this once an admin's PIN checks out.
@@ -59,6 +64,10 @@ struct Model {
     message: u64,
     /// The scan wait, aborted when the panel closes.
     scan: Option<tokio::task::JoinHandle<()>>,
+    /// What waits on the switch in flight (`switch_then`).
+    after_switch: Option<Switched>,
+    /// What runs once Core has answered a leave from `leave_then`.
+    after_leave: Option<Switched>,
 }
 
 thread_local! {
@@ -169,6 +178,11 @@ fn open_gate(ctx: &Ctx, app: &App, admins: Vec<(String, String)>, then: Continua
 /// Switch to a profile: at once when it has no PIN, otherwise once its
 /// PIN or its own switch card checks out. Leaving a profile is `leave`.
 pub(crate) fn switch_to(ctx: &Ctx, app: &App, profile: &Profile) {
+    switch_with(ctx, app, profile, None);
+}
+
+fn switch_with(ctx: &Ctx, app: &App, profile: &Profile, done: Option<Switched>) {
+    with(|m| m.after_switch = done);
     if !profile.has_pin {
         request_switch(ctx, app, &profile.profile_id, None, None);
         return;
@@ -180,6 +194,17 @@ pub(crate) fn switch_to(ctx: &Ctx, app: &App, profile: &Profile) {
         m.profile = Some((profile.profile_id.clone(), profile.name.clone()));
     });
     open(ctx, app);
+}
+
+/// `switch_to`, then `done` once Core has switched. Closing the PIN panel
+/// drops it, so the caller stays as it was.
+pub(crate) fn switch_then(
+    ctx: &Ctx,
+    app: &App,
+    profile: &Profile,
+    done: impl FnOnce(&Ctx, &App, bool) + 'static,
+) {
+    switch_with(ctx, app, profile, Some(Box::new(done)));
 }
 
 /// Type a new PIN for a profile. The gate already let the admin in; Core
@@ -217,15 +242,33 @@ fn setting(m: &Model) -> bool {
 
 /// Leave the active profile for the shared one. Never asks for a PIN.
 pub(crate) fn leave(ctx: &Ctx, app: &App) {
+    leave_with(ctx, app, None);
+}
+
+/// `leave`, then `done` once Core has answered.
+pub(crate) fn leave_then(ctx: &Ctx, app: &App, done: impl FnOnce(&Ctx, &App, bool) + 'static) {
+    leave_with(ctx, app, Some(Box::new(done)));
+}
+
+fn leave_with(ctx: &Ctx, app: &App, done: Option<Switched>) {
+    let waits = done.is_some();
+    with(|m| m.after_leave = done);
     let client = ctx.store.client();
     let ctx2 = ctx.clone();
     let weak = app.as_weak();
     ctx.handle.spawn(async move {
         let result = client.profiles_switch(SwitchProfileParams::default()).await;
-        if let Err(error) = result {
+        if let Err(error) = &result {
             tracing::warn!("leaving the profile failed: {}", error.message);
+        }
+        if result.is_err() || waits {
             let _ = weak.upgrade_in_event_loop(move |app| {
-                crate::router::report_action_error(&ctx2, &app, "setting", "");
+                if result.is_err() {
+                    crate::router::report_action_error(&ctx2, &app, "setting", "");
+                }
+                if let Some(done) = with(|m| m.after_leave.take()) {
+                    done(&ctx2, &app, result.is_ok());
+                }
             });
         }
     });
@@ -249,22 +292,63 @@ fn request_switch(
     };
     ctx.handle.spawn(async move {
         let result = client.profiles_switch(params).await;
-        let _ = weak.upgrade_in_event_loop(move |app| match result {
-            Ok(()) => {
-                if is_open(&app) && with(|m| m.ticket) == ticket {
-                    close(&ctx2, &app);
-                }
-            }
-            Err(error) => {
-                tracing::warn!("switching profile failed: {}", error.message);
-                if is_open(&app) && with(|m| m.ticket) == ticket {
-                    refused(&app, PinError::Failed, &error.message);
-                } else {
-                    crate::router::report_action_error(&ctx2, &app, "setting", "");
-                }
-            }
+        let result = result.map_err(|error| error.message);
+        let _ = weak.upgrade_in_event_loop(move |app| {
+            switch_answered(&ctx2, &app, ticket, result);
         });
     });
+}
+
+/// Core answered a switch. A late answer for a panel that has gone
+/// leaves its waiter dropped with it.
+fn switch_answered(ctx: &Ctx, app: &App, ticket: u64, result: Result<(), String>) {
+    let current = with(|m| m.ticket) == ticket;
+    let done = match result {
+        Ok(()) => {
+            let done = if current {
+                with(|m| m.after_switch.take())
+            } else {
+                None
+            };
+            if is_open(app) && current {
+                close(ctx, app);
+            }
+            done.map(|done| (done, true))
+        }
+        Err(message) => {
+            tracing::warn!("switching profile failed: {message}");
+            if is_open(app) && current {
+                refused(app, PinError::Failed, &message);
+                None
+            } else {
+                crate::router::report_action_error(ctx, app, "setting", "");
+                let done = if current {
+                    with(|m| m.after_switch.take())
+                } else {
+                    None
+                };
+                done.map(|done| (done, false))
+            }
+        }
+    };
+    if let Some((done, ok)) = done {
+        done(ctx, app, ok);
+    }
+}
+
+/// Core's answer to the switch the panel or a picker started last.
+#[cfg(all(test, feature = "mister"))]
+pub(crate) fn switch_answered_for_test(ctx: &Ctx, app: &App, result: Result<(), String>) {
+    let ticket = with(|m| m.ticket);
+    switch_answered(ctx, app, ticket, result);
+}
+
+/// Core's answer to the last `leave_then`.
+#[cfg(all(test, feature = "mister"))]
+pub(crate) fn leave_answered_for_test(ctx: &Ctx, app: &App, ok: bool) {
+    if let Some(done) = with(|m| m.after_leave.take()) {
+        done(ctx, app, ok);
+    }
 }
 
 fn open(ctx: &Ctx, app: &App) {
@@ -337,7 +421,14 @@ fn scanned(ctx: &Ctx, app: &App, verified: &VerifiedProfile) {
             }
         }
         Some(Some(target)) => {
+            // A typed PIN is being checked: one switch at a time. The card
+            // can still be scanned again if Core refuses the PIN.
+            if with(|m| m.checking) {
+                start_scan(ctx, app);
+                return;
+            }
             if verified.profile_id == target {
+                with(|m| m.checking = true);
                 let switch_id = lock(&ctx.shared)
                     .core
                     .profiles
@@ -418,6 +509,7 @@ pub(crate) fn close(ctx: &Ctx, app: &App) {
         m.purpose = None;
         m.pin.clear();
         m.checking = false;
+        m.after_switch = None;
         m.scan.take()
     });
     if let Some(scan) = scan {

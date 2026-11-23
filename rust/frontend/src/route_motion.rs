@@ -8295,7 +8295,7 @@ fn about_starts_at_top_only_on_fresh_entry_and_back_keeps_settings_focus() {
         shared.persist.active_screen = "about".into();
         shared.persist.about_scroll_milli = 725;
     }
-    crate::restore_core_independent(&ctx, &app);
+    assert!(crate::restore_core_independent(&ctx, &app));
     settle(&window);
     assert_eq!(app.global::<crate::AboutView>().get_scroll_milli(), 725);
     crate::router::enter_about(&ctx, &app, EntryMode::Fresh);
@@ -14603,4 +14603,427 @@ fn pin_message_clears_after_its_own_timeout() {
         crate::PinError::None,
         "the line went back to its hint"
     );
+}
+
+fn picker_profiles() -> Vec<zaparoo_core::profile_types::Profile> {
+    let profile = |id: &str, role: &str, has_pin: bool| zaparoo_core::profile_types::Profile {
+        profile_id: id.into(),
+        name: id.to_uppercase(),
+        role: role.into(),
+        has_pin,
+        ..Default::default()
+    };
+    vec![
+        profile("mum", "admin", true),
+        profile("kid", "member", false),
+        profile("sam", "member", true),
+    ]
+}
+
+/// A fresh start owed the picker: the catalog is in and `begin` has asked
+/// Core who there is. Returns the fetch's ticket.
+fn picker_start(
+    screen: &str,
+) -> (
+    App,
+    tokio::runtime::Runtime,
+    std::sync::Arc<crate::router::Ctx>,
+    u64,
+) {
+    let (app, _window, runtime, ctx) = cold_start(screen);
+    crate::profile_picker::owe(&mut crate::router::lock(&ctx.shared));
+    app.global::<Shell>().set_boot_complete(true);
+    let restore = screen != "hub";
+    crate::profile_picker::begin(&ctx, &app, restore);
+    let ticket = crate::profile_picker::ticket_for_test(&crate::router::lock(&ctx.shared));
+    (app, runtime, ctx, ticket)
+}
+
+fn active(id: &str) -> zaparoo_core::profile_types::ActiveProfile {
+    zaparoo_core::profile_types::ActiveProfile {
+        profile_id: id.into(),
+        name: id.to_uppercase(),
+        ..Default::default()
+    }
+}
+
+fn picker_names(app: &App) -> Vec<String> {
+    let rows = app.global::<crate::ProfilePickerView>().get_list_rows();
+    (0..rows.row_count())
+        .filter_map(|i| rows.row_data(i))
+        .map(|cell| cell.name.to_string())
+        .collect()
+}
+
+/// The curtain lifts onto the picker, focused on the active profile; Back
+/// keeps that profile and lands on the Hub.
+#[test]
+fn a_fresh_start_lifts_the_curtain_onto_the_picker_and_back_lands_on_the_hub() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _runtime, ctx, ticket) = picker_start("hub");
+    let shell = app.global::<Shell>();
+    assert!(shell.get_boot_curtain(), "the curtain waits for Core");
+    crate::router::lock(&ctx.shared).active_profile = Some(active("kid"));
+    crate::profile_picker::landed_for_test(
+        &ctx,
+        &app,
+        ticket,
+        picker_profiles(),
+        Some("kid"),
+        zaparoo_core::profile_types::KioskState::default(),
+    );
+    assert!(!shell.get_boot_curtain());
+    assert_eq!(shell.get_active_screen(), Screen::ProfilePicker);
+    assert_eq!(picker_names(&app), ["MUM", "KID", "SAM", "Shared profile"]);
+    let view = app.global::<crate::ProfilePickerView>();
+    assert_eq!(
+        view.get_list_sel(),
+        1,
+        "the cursor starts on the active profile"
+    );
+    let rows = view.get_list_rows();
+    assert_eq!(
+        rows.row_data(1).map(|c| c.tags.to_string()),
+        Some("Active".into())
+    );
+    assert_ne!(
+        crate::router::lock(&ctx.shared).persist.active_screen,
+        "profile-picker",
+        "the picker is never saved as the screen to restore"
+    );
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    assert_eq!(
+        crate::router::lock(&ctx.shared).active_profile,
+        Some(active("kid")),
+        "Back keeps whoever is active"
+    );
+}
+
+/// A profile without a PIN switches at once and the start carries on once
+/// Core has switched; input waits meanwhile, and a refusal stays on the
+/// picker.
+#[test]
+fn picking_a_profile_switches_then_carries_on() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _runtime, ctx, ticket) = picker_start("hub");
+    crate::profile_picker::landed_for_test(
+        &ctx,
+        &app,
+        ticket,
+        picker_profiles(),
+        None,
+        zaparoo_core::profile_types::KioskState::default(),
+    );
+    let shell = app.global::<Shell>();
+    let view = app.global::<crate::ProfilePickerView>();
+    assert_eq!(view.get_list_sel(), 3, "no profile active: the shared row");
+    crate::router::handle_action(&ctx, &app, "up");
+    crate::router::handle_action(&ctx, &app, "up");
+    assert_eq!(view.get_list_sel(), 1);
+    crate::router::handle_action(&ctx, &app, "accept");
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(
+        shell.get_active_screen(),
+        Screen::ProfilePicker,
+        "input waits for Core's answer"
+    );
+    crate::pin::switch_answered_for_test(&ctx, &app, Err("nope".into()));
+    assert_eq!(shell.get_active_screen(), Screen::ProfilePicker);
+    // The error alert takes the first Accept.
+    crate::router::handle_action(&ctx, &app, "accept");
+    advance(zaparoo_app::input::PRESS_FEEDBACK_MS + 10);
+    assert_eq!(shell.get_active_screen(), Screen::ProfilePicker);
+    crate::router::handle_action(&ctx, &app, "accept");
+    crate::pin::switch_answered_for_test(&ctx, &app, Ok(()));
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+}
+
+/// A profile with a PIN asks for it over the picker; Cancel on the pad
+/// leaves the picker as it was.
+#[test]
+fn a_pin_profile_asks_for_its_pin_over_the_picker() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _runtime, ctx, ticket) = picker_start("hub");
+    crate::profile_picker::landed_for_test(
+        &ctx,
+        &app,
+        ticket,
+        picker_profiles(),
+        Some("kid"),
+        zaparoo_core::profile_types::KioskState::default(),
+    );
+    let shell = app.global::<Shell>();
+    crate::router::handle_action(&ctx, &app, "down");
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert!(crate::pin::is_open(&app), "Sam's PIN is asked for");
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(!crate::pin::is_open(&app));
+    assert_eq!(shell.get_active_screen(), Screen::ProfilePicker);
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert!(crate::pin::is_open(&app));
+    crate::pin::switch_answered_for_test(&ctx, &app, Ok(()));
+    assert!(!crate::pin::is_open(&app));
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+}
+
+/// The shared row leaves the active profile; a kiosk lock hides it and
+/// the admins.
+#[test]
+fn the_shared_row_leaves_and_a_lock_hides_it_and_the_admins() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _runtime, ctx, ticket) = picker_start("hub");
+    crate::router::lock(&ctx.shared).active_profile = Some(active("kid"));
+    crate::profile_picker::landed_for_test(
+        &ctx,
+        &app,
+        ticket,
+        picker_profiles(),
+        Some("kid"),
+        zaparoo_core::profile_types::KioskState::default(),
+    );
+    let shell = app.global::<Shell>();
+    crate::router::handle_action(&ctx, &app, "down");
+    crate::router::handle_action(&ctx, &app, "down");
+    crate::router::handle_action(&ctx, &app, "accept");
+    assert_eq!(shell.get_active_screen(), Screen::ProfilePicker);
+    crate::pin::leave_answered_for_test(&ctx, &app, true);
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+
+    let locked = zaparoo_core::profile_types::KioskState {
+        state: "locked".into(),
+        settings: Some(zaparoo_core::profile_types::KioskSettings {
+            profile_switching: true,
+        }),
+    };
+    let (app, _runtime, ctx, ticket) = picker_start("hub");
+    crate::profile_picker::landed_for_test(&ctx, &app, ticket, picker_profiles(), None, locked);
+    assert_eq!(picker_names(&app), ["KID", "SAM"]);
+    // Unlocked while open: everyone is back.
+    crate::router::lock(&ctx.shared).kiosk = zaparoo_core::profile_types::KioskState::default();
+    crate::profile_picker::kiosk_changed(&ctx, &app);
+    assert_eq!(picker_names(&app), ["MUM", "KID", "SAM", "Shared profile"]);
+}
+
+/// No profile to pick, or a lock that keeps the active profile: the start
+/// goes on as if the setting were off.
+#[test]
+fn the_picker_is_skipped_without_a_choice() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _runtime, ctx, ticket) = picker_start("hub");
+    crate::profile_picker::landed_for_test(
+        &ctx,
+        &app,
+        ticket,
+        vec![],
+        None,
+        zaparoo_core::profile_types::KioskState::default(),
+    );
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    assert!(!shell.get_boot_curtain());
+
+    let fixed = zaparoo_core::profile_types::KioskState {
+        state: "locked".into(),
+        settings: Some(zaparoo_core::profile_types::KioskSettings {
+            profile_switching: false,
+        }),
+    };
+    let (app, _runtime, ctx, ticket) = picker_start("hub");
+    crate::profile_picker::landed_for_test(&ctx, &app, ticket, picker_profiles(), None, fixed);
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    assert!(!shell.get_boot_curtain());
+}
+
+/// A desktop start with a saved screen goes there after the pick.
+#[test]
+fn the_saved_screen_comes_back_after_the_pick() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _runtime, ctx, ticket) = picker_start("settings");
+    crate::profile_picker::landed_for_test(
+        &ctx,
+        &app,
+        ticket,
+        picker_profiles(),
+        Some("kid"),
+        zaparoo_core::profile_types::KioskState::default(),
+    );
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::ProfilePicker);
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert_eq!(shell.get_active_screen(), Screen::Settings);
+}
+
+/// Core never answers: the Hub shows, and a late answer never puts the
+/// picker over it.
+#[test]
+fn an_unreachable_core_shows_the_hub_and_never_the_picker_later() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _runtime, ctx, ticket) = picker_start("hub");
+    advance(crate::router::RESTORE_TIMEOUT.as_millis() as u64 + 1);
+    let shell = app.global::<Shell>();
+    assert!(!shell.get_boot_curtain());
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    crate::profile_picker::landed_for_test(
+        &ctx,
+        &app,
+        ticket,
+        picker_profiles(),
+        None,
+        zaparoo_core::profile_types::KioskState::default(),
+    );
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+
+    // Before the catalog ever came in.
+    let (app, _window, _runtime, ctx) = cold_start("hub");
+    crate::profile_picker::owe(&mut crate::router::lock(&ctx.shared));
+    crate::give_up_boot_restore(&ctx, &app);
+    assert!(!crate::profile_picker::owed(&crate::router::lock(
+        &ctx.shared
+    )));
+    assert!(!app.global::<Shell>().get_boot_curtain());
+}
+
+fn kiosk_locked(profile_switching: bool) -> zaparoo_core::profile_types::KioskState {
+    zaparoo_core::profile_types::KioskState {
+        state: "locked".into(),
+        settings: Some(zaparoo_core::profile_types::KioskSettings { profile_switching }),
+    }
+}
+
+/// A `kiosk.state` or `profiles.active` notification that lands while the
+/// picker's fetch is out is newer than its reply, and wins.
+#[test]
+fn notifications_during_the_fetch_win_over_its_reply() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _runtime, ctx, ticket) = picker_start("hub");
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.kiosk = kiosk_locked(true);
+        shared.kiosk_seq += 1;
+    }
+    crate::router::store_active_profile(&ctx, &app, Some(active("sam")));
+    crate::profile_picker::landed_for_test(
+        &ctx,
+        &app,
+        ticket,
+        picker_profiles(),
+        Some("kid"),
+        zaparoo_core::profile_types::KioskState::default(),
+    );
+    assert_eq!(picker_names(&app), ["KID", "SAM"], "the lock still holds");
+    let shared = crate::router::lock(&ctx.shared);
+    assert!(shared.kiosk.is_locked());
+    assert_eq!(shared.active_profile, Some(active("sam")));
+    drop(shared);
+    let view = app.global::<crate::ProfilePickerView>();
+    assert_eq!(
+        view.get_list_sel(),
+        1,
+        "focus is on the newer active profile"
+    );
+    assert_eq!(
+        view.get_list_rows().row_data(1).map(|c| c.tags.to_string()),
+        Some("Active".into()),
+        "the marker is on the same row"
+    );
+}
+
+/// A kiosk state Core could not report skips the picker; a launch policy
+/// that could not be read keeps the profiles but hides Shared profile.
+#[test]
+fn an_unread_lock_skips_the_picker_and_an_unread_policy_hides_shared() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _runtime, ctx, ticket) = picker_start("hub");
+    crate::profile_picker::landed_partly_for_test(
+        &ctx,
+        &app,
+        ticket,
+        picker_profiles(),
+        None,
+        Some(false),
+    );
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    assert!(!shell.get_boot_curtain());
+
+    let (app, _runtime, ctx, ticket) = picker_start("hub");
+    crate::profile_picker::landed_partly_for_test(
+        &ctx,
+        &app,
+        ticket,
+        picker_profiles(),
+        Some(zaparoo_core::profile_types::KioskState::default()),
+        None,
+    );
+    assert_eq!(picker_names(&app), ["MUM", "KID", "SAM"]);
+}
+
+/// A lock that stops profile switching while the picker is open ends it,
+/// as it would have skipped it at the start.
+#[test]
+fn a_lock_without_switching_ends_the_open_picker() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _runtime, ctx, ticket) = picker_start("hub");
+    crate::profile_picker::landed_for_test(
+        &ctx,
+        &app,
+        ticket,
+        picker_profiles(),
+        Some("kid"),
+        zaparoo_core::profile_types::KioskState::default(),
+    );
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::ProfilePicker);
+    crate::router::lock(&ctx.shared).kiosk = kiosk_locked(false);
+    crate::profile_picker::kiosk_changed(&ctx, &app);
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+}
+
+/// Cancel under the curtain while the fetch is out drops the picker: its
+/// late answer never opens it.
+#[test]
+fn cancel_under_the_curtain_retires_the_picker_fetch() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _runtime, ctx, ticket) = picker_start("hub");
+    crate::router::handle_action(&ctx, &app, "cancel");
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    shell.set_boot_curtain(true);
+    crate::profile_picker::landed_for_test(
+        &ctx,
+        &app,
+        ticket,
+        picker_profiles(),
+        None,
+        zaparoo_core::profile_types::KioskState::default(),
+    );
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+}
+
+/// A saved Settings waited for the picker; when the start drops the
+/// picker without Core, Settings still comes back.
+#[test]
+fn a_saved_settings_comes_back_when_the_picker_is_dropped() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window, _runtime, ctx) = cold_start("settings");
+    crate::profile_picker::owe(&mut crate::router::lock(&ctx.shared));
+    crate::give_up_boot_restore(&ctx, &app);
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::Settings);
+    assert!(!shell.get_boot_curtain());
+
+    // Cancel once the catalog is in and the fetch is out.
+    let (app, _runtime, ctx, _ticket) = picker_start("settings");
+    crate::router::handle_action(&ctx, &app, "cancel");
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::Settings);
+    assert!(!shell.get_boot_curtain());
+    // The fetch never answers.
+    let (app, _runtime, _ctx, _ticket) = picker_start("settings");
+    advance(crate::router::RESTORE_TIMEOUT.as_millis() as u64 + 1);
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::Settings);
+    assert!(!shell.get_boot_curtain());
 }

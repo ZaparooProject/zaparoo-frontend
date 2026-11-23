@@ -63,6 +63,7 @@ pub mod paged_grid;
 pub mod pairing;
 pub mod palette;
 pub mod pin;
+pub mod profile_picker;
 pub mod readers;
 pub mod retro_achievements;
 pub mod row_store;

@@ -1483,6 +1483,9 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
     if screen.contains("game-picker") {
         fixture_game_picker(&app, scene_w, scene_h, crt, screen);
     }
+    if screen.contains("profile-picker") {
+        fixture_profile_picker(&app, scene_w, scene_h, crt);
+    }
     if screen.starts_with("calibration") {
         let overlays = app.global::<generated::Overlays>();
         overlays.set_crt_h_offset(4);
@@ -2662,11 +2665,55 @@ fn fixture_game_picker(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen:
     view.set_can_search(search);
 }
 
+/// "Who is playing?" on a fresh start: three profiles and the shared
+/// one, the cursor on the active profile.
+fn fixture_profile_picker(app: &App, scene_w: f64, scene_h: f64, crt: bool) {
+    use generated::ProfilePickerView;
+    let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
+    let rotated = inputs.swap_percentage_axes;
+    let g = zaparoo_app::media_list::scene_list_geometry(
+        &inputs,
+        rotated,
+        0,
+        zaparoo_app::media_list::list_visible_rows(crt, rotated),
+    );
+    let view = app.global::<ProfilePickerView>();
+    view.set_card_x(g.card_x as f32);
+    view.set_card_y(g.card_y as f32);
+    view.set_card_width(g.card_width as f32);
+    view.set_card_height(g.card_height as f32);
+    view.set_row_height(g.row_height as f32);
+    let labels = app.global::<generated::Labels>();
+    let cells: Vec<GridCell> = [
+        ("", "Alex", false),
+        ("", "Sam", true),
+        ("", "Jo", false),
+        ("shared", "", false),
+    ]
+    .into_iter()
+    .map(|(key, name, active)| GridCell {
+        name: labels.invoke_profile_row(key.into(), name.into()),
+        tags: if active {
+            labels.invoke_profile_active()
+        } else {
+            slint::SharedString::default()
+        },
+        ..Default::default()
+    })
+    .collect();
+    view.set_list_rows(slint::ModelRc::new(slint::VecModel::from(cells)));
+    view.set_list_view_top(0);
+    view.set_list_scroll_top(0);
+    view.set_list_sel(1);
+}
+
 fn fixture_screen(screen: &str) -> Screen {
     if screen.ends_with("blank-token-game") {
         Screen::Games
     } else if screen.contains("game-picker") {
         Screen::GamePicker
+    } else if screen.contains("profile-picker") {
+        Screen::ProfilePicker
     } else if screen.contains("credits") {
         Screen::Credits
     } else if screen.starts_with("route-")
@@ -4880,6 +4927,8 @@ mod fixture_tests {
             ("game-picker", Screen::GamePicker),
             ("game-picker-search", Screen::GamePicker),
             ("crt-game-picker-games", Screen::GamePicker),
+            ("profile-picker", Screen::ProfilePicker),
+            ("crt-profile-picker", Screen::ProfilePicker),
             ("settings-page-profiles-pin", Screen::Settings),
             ("settings-page-profiles-pin-first", Screen::Settings),
             ("crt-settings-page-profiles-pin-first", Screen::Settings),

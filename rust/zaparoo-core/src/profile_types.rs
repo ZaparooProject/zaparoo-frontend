@@ -62,6 +62,40 @@ pub struct ActiveProfileResult {
     pub profile: Option<ActiveProfile>,
 }
 
+/// The kiosk lock (`kiosk`, and the `kiosk.state` notification), as far
+/// as the frontend reads it.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct KioskState {
+    /// `off`, `locked` or `unlocked`.
+    #[serde(default)]
+    pub state: String,
+    /// Present whenever kiosk mode is on.
+    #[serde(default)]
+    pub settings: Option<KioskSettings>,
+}
+
+impl KioskState {
+    /// Locked now. Off and a temporary unlock are not.
+    pub fn is_locked(&self) -> bool {
+        self.state == "locked"
+    }
+
+    /// The active profile may change between non-admin profiles while
+    /// locked.
+    pub fn profile_switching(&self) -> bool {
+        self.settings.as_ref().is_some_and(|s| s.profile_switching)
+    }
+}
+
+/// The kiosk settings the frontend reads.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct KioskSettings {
+    #[serde(default)]
+    pub profile_switching: bool,
+}
+
 /// `profiles.data`: how swapping a profile's data went.
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -230,6 +264,21 @@ mod tests {
     fn leaving_a_profile_sends_nothing() -> Result<(), serde_json::Error> {
         let v = serde_json::to_value(SwitchProfileParams::default())?;
         assert_eq!(v, json!({}));
+        Ok(())
+    }
+
+    #[test]
+    fn kiosk_reads_lock_and_switching() -> Result<(), serde_json::Error> {
+        let k: KioskState = serde_json::from_value(json!({
+            "state": "locked",
+            "settings": {"preset": "family", "profileSwitching": true},
+            "seal": {"sealed": false, "unsealed": []}
+        }))?;
+        assert!(k.is_locked());
+        assert!(k.profile_switching());
+        let off: KioskState = serde_json::from_value(json!({"state": "off", "seal": {}}))?;
+        assert!(!off.is_locked());
+        assert!(!off.profile_switching());
         Ok(())
     }
 

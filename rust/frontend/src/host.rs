@@ -26,6 +26,10 @@ pub struct Options {
     pub core_transport: Option<Transport>,
     /// Posts the support bundle; `None` hides Settings > Upload log file.
     pub log_upload: Option<LogUploader>,
+    /// This start is a fresh one (the device just powered on, not a
+    /// relaunch of the frontend): Settings > Profiles > Choose profile at
+    /// startup may open on the profile picker.
+    pub fresh_start: bool,
 }
 
 /// Start the real application on the host's initialized Slint thread.

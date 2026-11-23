@@ -104,6 +104,11 @@ pub struct Shared {
     /// `profiles.active` on connect, then followed through its
     /// notification. Memory only.
     pub active_profile: Option<zaparoo_core::profile_types::ActiveProfile>,
+    /// Bumped on every store of `active_profile`, so a startup snapshot
+    /// read before a newer one is not applied over it. Zero until Core
+    /// has answered at all: `None` is then unknown, not the shared
+    /// profile.
+    pub active_profile_seq: u64,
     /// Which surface the open context menu targets, with the target's
     /// projected index on that surface.
     pub context_owner: ContextOwner,
@@ -190,6 +195,13 @@ pub struct Shared {
     pub credits: crate::credits::Model,
     /// "Choose a game", while it is open.
     pub game_picker: crate::game_picker::Model,
+    /// "Who is playing?" on a fresh start.
+    pub profile_picker: crate::profile_picker::Model,
+    /// Core's kiosk lock, from `kiosk` and its `kiosk.state` notification.
+    pub kiosk: zaparoo_core::profile_types::KioskState,
+    /// Bumped on every `kiosk.state` notification, so a `kiosk` reply read
+    /// before a newer notification is not applied over it.
+    pub kiosk_seq: u64,
     /// The music player.
     pub music: crate::music::Model,
     /// Ticket for the per-game launcher read, so a picker only opens
@@ -376,6 +388,7 @@ impl Shared {
             has_nfc: false,
             readers: Vec::new(),
             active_profile: None,
+            active_profile_seq: 0,
             context_owner: ContextOwner::Games,
             context_target: 0,
             flag_requests: zaparoo_app::user_flags::Requests::default(),
@@ -414,6 +427,9 @@ impl Shared {
             file_browser: crate::file_browser::Model::default(),
             credits: crate::credits::Model::default(),
             game_picker: crate::game_picker::Model::default(),
+            profile_picker: crate::profile_picker::Model::default(),
+            kiosk: zaparoo_core::profile_types::KioskState::default(),
+            kiosk_seq: 0,
             music: crate::music::Model::default(),
             game_launcher_seq: 0,
             persist,
@@ -1328,7 +1344,12 @@ pub(crate) fn arm_restore_timeout(ctx: &Ctx, app: &App) {
             abandon_restore(&ctx, &app);
             report_action_error(&ctx, &app, "browse", "");
         } else {
-            // Only the Hub's Resume tile was outstanding; show the Hub.
+            // Only the Hub's Resume tile, or the profile picker's fetch,
+            // was outstanding. A dropped picker still brings back a saved
+            // Settings, About or Credits; otherwise the Hub shows.
+            if crate::profile_picker::retire(&mut lock(&ctx.shared)) {
+                let _ = crate::restore_core_independent(&ctx, &app);
+            }
             finish_restore(&app);
         }
     });
@@ -1340,6 +1361,15 @@ pub(crate) fn arm_restore_timeout(ctx: &Ctx, app: &App) {
 /// naming the target, so the next start tries it again.
 pub(crate) fn abandon_restore(ctx: &Ctx, app: &App) {
     crate::music::abandon(ctx);
+    // A start still waiting on Core for the profile picker drops it, and
+    // a saved Settings, About or Credits comes back as it would have
+    // without the picker.
+    if crate::profile_picker::retire(&mut lock(&ctx.shared))
+        && crate::restore_core_independent(ctx, app)
+    {
+        finish_restore(app);
+        return;
+    }
     let parent = {
         let mut shared = lock(&ctx.shared);
         shared.games.fill_task.cancel();
@@ -1665,6 +1695,7 @@ fn screen_action(ctx: &Ctx, app: &App, action: &str) {
         crate::Screen::About => about_action(ctx, app, action),
         crate::Screen::Credits => crate::credits::handle_action(ctx, app, action),
         crate::Screen::GamePicker => crate::game_picker::handle_action(ctx, app, action),
+        crate::Screen::ProfilePicker => crate::profile_picker::handle_action(ctx, app, action),
         crate::Screen::Update => crate::update::handle_action(ctx, app, action),
         crate::Screen::None => {}
     }
@@ -1968,6 +1999,7 @@ pub(crate) fn relayout(ctx: &Ctx, app: &App) {
     crate::file_browser::relayout(ctx, app);
     crate::credits::relayout(ctx, app);
     crate::game_picker::relayout(ctx, app);
+    crate::profile_picker::relayout(ctx, app);
     crate::music::relayout(ctx, app);
 }
 
@@ -2463,6 +2495,7 @@ pub(crate) fn store_active_profile(
         let mut shared = lock(&ctx.shared);
         let changed = shared.active_profile != profile;
         shared.active_profile = profile;
+        shared.active_profile_seq = shared.active_profile_seq.wrapping_add(1);
         let name = shared
             .active_profile
             .as_ref()
@@ -2482,6 +2515,9 @@ pub(crate) fn store_active_profile(
     if changed && app.global::<crate::Shell>().get_active_screen() == crate::Screen::Settings {
         crate::settings::reseat(ctx, app);
         crate::settings::refresh(ctx, app);
+    }
+    if changed {
+        crate::profile_picker::active_changed(ctx, app);
     }
 }
 

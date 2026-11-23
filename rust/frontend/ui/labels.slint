@@ -89,6 +89,16 @@ export global Labels {
         if (key == "search") { return @tr("Search"); }
         return name;
     }
+    // A row of "Who is playing?": the shared profile by its key, any
+    // other by the profile's own name.
+    public pure function profile-row(key: string, name: string) -> string {
+        if (key == "shared") { return @tr("Shared profile"); }
+        return name;
+    }
+    // The dim note after the active profile's row in "Who is playing?".
+    public pure function profile-active() -> string {
+        return @tr("Active");
+    }
     // The file browser's last row when a folder holds more than it lists.
     public pure function more-not-shown(n: int) -> string {
         return @tr("{n} more not shown" | "{n} more not shown" % n);
