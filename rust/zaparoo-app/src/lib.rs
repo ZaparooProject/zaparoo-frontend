@@ -16,6 +16,7 @@
 pub mod action_error;
 pub mod artwork_prefs;
 pub mod background;
+pub mod backup_status;
 pub mod branding;
 pub mod browse_filter;
 pub mod buttons;

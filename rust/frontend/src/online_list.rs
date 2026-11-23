@@ -2,8 +2,10 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
-// Settings > Online: the two lists behind it. Cloud backups (back up now,
-// restore a snapshot) and the remote-control activity log share one modal.
+// Settings > Online: the lists behind it. Cloud backups (back up now,
+// restore a snapshot), local backups (a backup's details, delete it) and
+// the remote-control activity log share one modal; a local backup's
+// details are a page of it.
 // Core owns every snapshot and every upload; this module asks, shows what
 // came back through `zaparoo_app::online_lists`, and forwards the user's
 // choice. Every answer from Core lands on the UI thread through an
@@ -11,14 +13,17 @@
 // already left.
 
 use slint::{ComponentHandle, SharedString};
-use zaparoo_app::online_lists::{self as lists, ListRow};
+use zaparoo_app::backup_status::Activity;
+use zaparoo_app::online_lists::{self as lists, BackupCategory, ListRow, RowKind};
 use zaparoo_core::input_actions::actions;
-use zaparoo_core::media_types::{BackupRemoteListResult, RemoteActivityResult};
+use zaparoo_core::media_types::{
+    BackupRemoteListResult, LocalBackup, LocalBackupListItem, RemoteActivityResult,
+};
 
 use crate::router::{lock, Ctx};
 use crate::{
-    App, DialogButton, DialogKind, OnlineListFailure, OnlineListKind, OnlineListRow,
-    OnlineListStatus, Overlays,
+    App, BackupActivity, DialogButton, DialogKind, OnlineListFailure, OnlineListKind,
+    OnlineListRow, OnlineListRowKind, OnlineListStatus, Overlays,
 };
 
 /// The action row that leads the backup list.
@@ -38,12 +43,22 @@ pub struct State {
     /// The snapshot a restore was asked about, and its label, while the
     /// confirmation is up.
     pending_restore: Option<(String, String)>,
+    /// The local backup a delete was asked about, while the confirmation
+    /// is up.
+    pending_delete: Option<String>,
+    /// The details page's title: the backup's time, as its list row read.
+    title: String,
+    /// Where the cursor was on the local list, for Back from its details.
+    list_index: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Kind {
     Backups,
     Activity,
+    Local,
+    /// One local backup's details, a page of the local list.
+    LocalDetails,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -55,12 +70,14 @@ enum Status {
     Empty,
     BackingUp,
     Restoring,
+    Deleting,
 }
 
 impl Status {
-    /// A backup or a restore is running: the list takes no input.
+    /// A backup, a restore or a delete is running: the list takes no
+    /// input.
     fn working(self) -> bool {
-        matches!(self, Self::BackingUp | Self::Restoring)
+        matches!(self, Self::BackingUp | Self::Restoring | Self::Deleting)
     }
 }
 
@@ -73,8 +90,40 @@ impl From<Status> for OnlineListStatus {
             Status::Empty => Self::Empty,
             Status::BackingUp => Self::BackingUp,
             Status::Restoring => Self::Restoring,
+            Status::Deleting => Self::Deleting,
         }
     }
+}
+
+fn row_kind(kind: RowKind) -> OnlineListRowKind {
+    match kind {
+        RowKind::Entry => OnlineListRowKind::Entry,
+        RowKind::Run => OnlineListRowKind::Run,
+        RowKind::Created => OnlineListRowKind::Created,
+        RowKind::Size => OnlineListRowKind::Size,
+        RowKind::Skipped => OnlineListRowKind::Skipped,
+        RowKind::Error => OnlineListRowKind::Error,
+        RowKind::Category(BackupCategory::Zaparoo) => OnlineListRowKind::Zaparoo,
+        RowKind::Category(BackupCategory::Settings) => OnlineListRowKind::Settings,
+        RowKind::Category(BackupCategory::Inputs) => OnlineListRowKind::Inputs,
+        RowKind::Category(BackupCategory::Saves) => OnlineListRowKind::Saves,
+        RowKind::Category(BackupCategory::Savestates) => OnlineListRowKind::Savestates,
+        RowKind::Delete => OnlineListRowKind::Delete,
+    }
+}
+
+/// The pace of the backup or restore running in Core, for the working
+/// status. Published whether or not the list is up, so it is right the
+/// moment one opens.
+pub fn publish_activity(ctx: &Ctx, app: &App) {
+    let activity = lock(&ctx.shared).online.activity;
+    app.global::<Overlays>()
+        .set_backup_activity(match activity {
+            Activity::Idle => BackupActivity::Idle,
+            Activity::Running => BackupActivity::Running,
+            Activity::Paused => BackupActivity::Paused,
+            Activity::Slowed => BackupActivity::Slowed,
+        });
 }
 
 fn render(ctx: &Ctx, app: &App) {
@@ -84,8 +133,11 @@ fn render(ctx: &Ctx, app: &App) {
     overlays.set_online_list_kind(match state.kind {
         Some(Kind::Backups) => OnlineListKind::Backups,
         Some(Kind::Activity) => OnlineListKind::Activity,
+        Some(Kind::Local) => OnlineListKind::Local,
+        Some(Kind::LocalDetails) => OnlineListKind::LocalDetails,
         None => OnlineListKind::None,
     });
+    overlays.set_online_list_title(SharedString::from(state.title.as_str()));
     overlays.set_online_list_status(state.status.into());
     overlays.set_online_list_failure(match state.failure {
         lists::Failure::Unlinked => OnlineListFailure::Unlinked,
@@ -100,9 +152,11 @@ fn render(ctx: &Ctx, app: &App) {
         .rows
         .iter()
         .map(|row| OnlineListRow {
+            kind: row_kind(row.kind),
             id: SharedString::from(row.id.as_str()),
             label: SharedString::from(row.label.as_str()),
             detail: SharedString::from(row.detail.as_str()),
+            count: i32::try_from(row.count).unwrap_or(i32::MAX),
             enabled: row.enabled,
             this_device: row.this_device,
         })
@@ -165,6 +219,7 @@ fn backup_rows(list: &BackupRemoteListResult) -> Vec<ListRow> {
     let mut snapshots: Vec<_> = list.items.iter().collect();
     snapshots.sort_by(|a, b| b.created_at.cmp(&a.created_at));
     let mut rows = vec![ListRow {
+        kind: RowKind::Run,
         id: RUN_ROW.to_string(),
         enabled: true,
         ..ListRow::default()
@@ -208,6 +263,204 @@ pub(crate) fn observe_backups(ctx: &Ctx, app: &App, ticket: u64, list: &BackupRe
         };
     }
     render(ctx, app);
+}
+
+/// Open the list of this device's local backups.
+pub fn open_local(ctx: &Ctx, app: &App) {
+    let ticket = begin(ctx, app, Kind::Local);
+    fetch_local(ctx, app, ticket);
+}
+
+fn fetch_local(ctx: &Ctx, app: &App, ticket: u64) {
+    let client = ctx.store.client();
+    let ctx = ctx.clone();
+    let weak = app.as_weak();
+    ctx.handle.clone().spawn(async move {
+        let result = client.settings_backup_list().await;
+        let _ = weak.upgrade_in_event_loop(move |app| match result {
+            Ok(list) => observe_local(&ctx, &app, ticket, &list),
+            Err(error) => {
+                tracing::warn!("listing local backups failed: {}", error.message);
+                observe_failed(&ctx, &app, ticket, lists::failure(&error.message));
+            }
+        });
+    });
+}
+
+pub(crate) fn observe_local(ctx: &Ctx, app: &App, ticket: u64, list: &[LocalBackupListItem]) {
+    if !current(ctx, ticket) {
+        return;
+    }
+    {
+        let mut shared = lock(&ctx.shared);
+        let state = &mut shared.online_list;
+        let backups: Vec<lists::LocalBackup<'_>> = list
+            .iter()
+            .map(|item| lists::LocalBackup {
+                name: &item.name,
+                created_at: &item.created_at,
+                size: item.size,
+            })
+            .collect();
+        state.rows = lists::local_backup_rows(&backups);
+        state.index = state.index.min(state.rows.len().saturating_sub(1));
+        state.status = if state.rows.is_empty() {
+            Status::Empty
+        } else {
+            Status::Ready
+        };
+    }
+    render(ctx, app);
+}
+
+/// Accepted a local backup: its details replace the list, as a page of
+/// the same panel.
+fn open_details(ctx: &Ctx, app: &App, index: usize) {
+    let row = lock(&ctx.shared).online_list.rows.get(index).cloned();
+    let Some(row) = row else { return };
+    let ticket = {
+        let mut shared = lock(&ctx.shared);
+        let state = &mut shared.online_list;
+        state.ticket = state.ticket.wrapping_add(1);
+        state.kind = Some(Kind::LocalDetails);
+        state.list_index = index;
+        state.title = row.label;
+        state.rows.clear();
+        state.index = 0;
+        state.status = Status::Loading;
+        state.ticket
+    };
+    crate::press_feedback::cancel(app);
+    render(ctx, app);
+    let client = ctx.store.client();
+    let ctx = ctx.clone();
+    let weak = app.as_weak();
+    let name = row.id;
+    ctx.handle.clone().spawn(async move {
+        let result = client.settings_backup_inspect(&name).await;
+        let _ = weak.upgrade_in_event_loop(move |app| match result {
+            Ok(backup) => observe_details(&ctx, &app, ticket, &backup),
+            Err(error) => {
+                tracing::warn!("reading a local backup failed: {}", error.message);
+                observe_failed(&ctx, &app, ticket, lists::failure(&error.message));
+            }
+        });
+    });
+}
+
+pub(crate) fn observe_details(ctx: &Ctx, app: &App, ticket: u64, backup: &LocalBackup) {
+    if !current(ctx, ticket) {
+        return;
+    }
+    {
+        let categories: Vec<(&str, lists::Category)> = backup
+            .categories
+            .iter()
+            .map(|(token, entry)| {
+                (
+                    token.as_str(),
+                    lists::Category {
+                        files: entry.files,
+                        bytes: entry.bytes,
+                        enabled: entry.enabled,
+                    },
+                )
+            })
+            .collect();
+        let rows = lists::local_detail_rows(&lists::LocalDetails {
+            name: &backup.name,
+            created_at: &backup.created_at,
+            size: backup.size,
+            status: &backup.status,
+            warnings: backup.warnings.len(),
+            error: backup.error.as_deref(),
+            categories: &categories,
+        });
+        let mut shared = lock(&ctx.shared);
+        let state = &mut shared.online_list;
+        // Seated on Delete, the one row that acts.
+        state.index = rows.len().saturating_sub(1);
+        state.rows = rows;
+        state.status = Status::Ready;
+    }
+    render(ctx, app);
+}
+
+/// Back from a local backup's details, to the list seated where it was.
+fn back_to_local(ctx: &Ctx, app: &App) {
+    let ticket = {
+        let mut shared = lock(&ctx.shared);
+        let state = &mut shared.online_list;
+        state.ticket = state.ticket.wrapping_add(1);
+        state.kind = Some(Kind::Local);
+        state.index = state.list_index;
+        state.title.clear();
+        state.pending_delete = None;
+        state.rows.clear();
+        state.status = Status::Loading;
+        state.ticket
+    };
+    crate::press_feedback::cancel(app);
+    render(ctx, app);
+    fetch_local(ctx, app, ticket);
+}
+
+fn accept_detail_row(ctx: &Ctx, app: &App, index: usize) {
+    let (row, title) = {
+        let shared = lock(&ctx.shared);
+        let state = &shared.online_list;
+        (state.rows.get(index).cloned(), state.title.clone())
+    };
+    let Some(row) = row.filter(|row| row.kind == RowKind::Delete) else {
+        return;
+    };
+    lock(&ctx.shared).online_list.pending_delete = Some(row.id);
+    crate::router::open_dialog(
+        app,
+        DialogKind::DeleteLocalBackup,
+        &title,
+        "",
+        &[DialogButton::No, DialogButton::Yes],
+        0,
+    );
+}
+
+/// The user confirmed deleting the local backup they asked about. The
+/// list comes back without it.
+pub fn delete_confirmed(ctx: &Ctx, app: &App) {
+    let pending = lock(&ctx.shared).online_list.pending_delete.take();
+    let Some(name) = pending else { return };
+    let ticket = {
+        let mut shared = lock(&ctx.shared);
+        shared.online_list.status = Status::Deleting;
+        shared.online_list.ticket
+    };
+    render(ctx, app);
+    let client = ctx.store.client();
+    let ctx = ctx.clone();
+    let weak = app.as_weak();
+    ctx.handle.clone().spawn(async move {
+        let result = client.settings_backup_delete(&name).await;
+        let _ = weak.upgrade_in_event_loop(move |app| {
+            if !current(&ctx, ticket) {
+                return;
+            }
+            match result {
+                Ok(()) => back_to_local(&ctx, &app),
+                Err(error) => {
+                    tracing::warn!("deleting a local backup failed: {}", error.message);
+                    crate::router::report_action_error(&ctx, &app, "local_backup", "");
+                    lock(&ctx.shared).online_list.status = Status::Ready;
+                    render(&ctx, &app);
+                }
+            }
+        });
+    });
+}
+
+/// The user said no to deleting: the details stay.
+pub fn delete_declined(ctx: &Ctx) {
+    lock(&ctx.shared).online_list.pending_delete = None;
 }
 
 /// Open the remote-control activity log.
@@ -296,11 +549,21 @@ pub fn handle_action(ctx: &Ctx, app: &App, action: &str) {
         (state.rows.len(), state.index, state.kind, state.status)
     };
     match action {
+        // Back from a backup's details is a page back, not out, unless a
+        // delete is running.
+        actions::CANCEL if kind == Some(Kind::LocalDetails) && !status.working() => {
+            back_to_local(ctx, app);
+        }
         actions::CANCEL | actions::PAGE_MENU => close(ctx, app),
         actions::UP if len > 0 => move_to(ctx, app, (index + len - 1) % len),
         actions::DOWN if len > 0 => move_to(ctx, app, (index + 1) % len),
-        actions::ACCEPT if kind == Some(Kind::Backups) && !status.working() => {
-            accept_backup_row(ctx, app, index);
+        actions::ACCEPT if status.working() => {}
+        actions::ACCEPT if kind == Some(Kind::Backups) => accept_backup_row(ctx, app, index),
+        actions::ACCEPT if kind == Some(Kind::Local) && index < len => {
+            open_details(ctx, app, index);
+        }
+        actions::ACCEPT if kind == Some(Kind::LocalDetails) => {
+            accept_detail_row(ctx, app, index);
         }
         _ => {}
     }

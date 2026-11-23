@@ -20,19 +20,19 @@ use crate::device::{BluetoothDeviceParams, BluetoothScanParams, BluetoothState, 
 use crate::media_types::{
     ActiveMediaInfo, AuthLinkStatus, AuthStatusResult, BackupRemoteListResult,
     BackupRemoteRestoreResult, BackupRemoteRunResult, BackupStatusResponse, HealthResult,
-    LaunchersResult, LogDownloadResult, MediaActiveImageParams, MediaActiveParams,
-    MediaAssetParams, MediaAssetResult, MediaBrowseIndexParams, MediaBrowseIndexResult,
-    MediaBrowseParams, MediaBrowseResult, MediaControlParams, MediaHistoryLatestResult,
-    MediaHistoryParams, MediaHistoryResult, MediaHistoryTopParams, MediaHistoryTopResult,
-    MediaImageParams, MediaImageResult, MediaIndexParams, MediaLookupParams, MediaLookupResult,
-    MediaMetaParams, MediaMetaResult, MediaMetaUpdateParams, MediaRecommendedParams,
-    MediaRecommendedResult, MediaResult, MediaScrapeParams, MediaSearchParams, MediaSearchResult,
-    MediaSimilarParams, MediaSimilarResult, MediaTagsParams, MediaTagsResult,
-    MediaTagsUpdateParams, MediaTagsUpdateResult, MediaVersionsParams, MediaVersionsResult,
-    OnlineStatusResult, PairStartResult, PlaylistsUpdateParams, ReadersResult, ReadersWriteParams,
-    RemoteActivityResult, RunParams, ScrapersResult, ScrapingStatusResponse, SettingsResult,
-    SystemsParams, SystemsResult, TokensHistoryResult, TokensResult, UpdateSettingsParams,
-    VersionResult,
+    LaunchersResult, LocalBackup, LocalBackupListItem, LogDownloadResult, MediaActiveImageParams,
+    MediaActiveParams, MediaAssetParams, MediaAssetResult, MediaBrowseIndexParams,
+    MediaBrowseIndexResult, MediaBrowseParams, MediaBrowseResult, MediaControlParams,
+    MediaHistoryLatestResult, MediaHistoryParams, MediaHistoryResult, MediaHistoryTopParams,
+    MediaHistoryTopResult, MediaImageParams, MediaImageResult, MediaIndexParams, MediaLookupParams,
+    MediaLookupResult, MediaMetaParams, MediaMetaResult, MediaMetaUpdateParams,
+    MediaRecommendedParams, MediaRecommendedResult, MediaResult, MediaScrapeParams,
+    MediaSearchParams, MediaSearchResult, MediaSimilarParams, MediaSimilarResult, MediaTagsParams,
+    MediaTagsResult, MediaTagsUpdateParams, MediaTagsUpdateResult, MediaVersionsParams,
+    MediaVersionsResult, OnlineStatusResult, PairStartResult, PlaylistsUpdateParams, ReadersResult,
+    ReadersWriteParams, RemoteActivityResult, RunParams, ScrapersResult, ScrapingStatusResponse,
+    SettingsResult, SystemsParams, SystemsResult, TokensHistoryResult, TokensResult,
+    UpdateSettingsParams, VersionResult,
 };
 use crate::profile_types::{
     ActiveProfile, ClientsResult, KioskState, NewProfileParams, PlaytimeLimits, Profile,
@@ -937,6 +937,38 @@ impl Client {
         struct P {}
         let val = self.call("settings.backup.status", &P {}).await?;
         serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// This device's local backup ZIPs, metadata only.
+    pub async fn settings_backup_list(&self) -> Result<Vec<LocalBackupListItem>, ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        let val = self.call("settings.backup.list", &P {}).await?;
+        // A list with nothing in it may come back as null.
+        if val.is_null() {
+            return Ok(Vec::new());
+        }
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// One local backup's manifest, read without hashing its payloads.
+    pub async fn settings_backup_inspect(&self, name: &str) -> Result<LocalBackup, ClientError> {
+        #[derive(Serialize)]
+        struct P<'a> {
+            name: &'a str,
+        }
+        let val = self.call("settings.backup.inspect", &P { name }).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// Delete one local backup ZIP.
+    pub async fn settings_backup_delete(&self, name: &str) -> Result<(), ClientError> {
+        #[derive(Serialize)]
+        struct P<'a> {
+            name: &'a str,
+        }
+        self.call("settings.backup.delete", &P { name }).await?;
+        Ok(())
     }
 
     /// Back up this device to the cloud now, outside its schedule.

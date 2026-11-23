@@ -10,7 +10,7 @@ use serde_json::Value;
 use tracing::{debug, info, warn};
 
 use crate::media_state::{self, Notifier};
-use crate::{decks, device, fixtures, library, music, profiles, readers, ui_events};
+use crate::{backup, decks, device, fixtures, library, music, profiles, readers, ui_events};
 
 #[derive(Deserialize)]
 struct RpcRequest {
@@ -69,7 +69,8 @@ pub fn dispatch(text: &str, notifier: &Notifier) -> String {
         .or_else(|| device::route(&req.method, &req.params, notifier))
         .or_else(|| ui_events::route(&req.method, &req.params, notifier))
         .or_else(|| readers::route(&req.method, &req.params, notifier))
-        .or_else(|| profiles::route(&req.method, &req.params, notifier));
+        .or_else(|| profiles::route(&req.method, &req.params, notifier))
+        .or_else(|| backup::route(&req.method, &req.params));
     let outcome: Option<Result<Value, String>> = routed.or_else(|| match req.method.as_str() {
         "systems" => Some(Ok(fixtures::systems_response(&req.params))),
         "launchers" => Some(Ok(fixtures::launchers_response())),

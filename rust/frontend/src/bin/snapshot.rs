@@ -1127,9 +1127,15 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
         let ov = app.global::<generated::Overlays>();
         let row = |id: &str, label: &str, detail: &str, enabled: bool, this_device: bool| {
             generated::OnlineListRow {
+                kind: if id == "run" {
+                    generated::OnlineListRowKind::Run
+                } else {
+                    generated::OnlineListRowKind::Entry
+                },
                 id: id.into(),
                 label: label.into(),
                 detail: detail.into(),
+                count: 0,
                 enabled,
                 this_device,
             }
@@ -3917,6 +3923,9 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
         can_request_playtime_access: playtime,
         can_link_online: online,
         online_linked: online && !unlinked,
+        online_auto_backup: online,
+        online_backup_protection: online && !unlinked,
+        online_backup_last_attempt: online && !unlinked,
         launcher_preference: ra,
         retro_achievements: ra,
         ra_logged_in: ra && !ra_setup,
@@ -4050,7 +4059,7 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                                         | "playtimeEnabled"
                                         | "encryption"
                                 )
-                                || (id == "playtimeSync" && !unlinked)
+                                || (matches!(id, "playtimeSync" | "onlineAutoBackup") && !unlinked)
                                 || (!ra_setup
                                     && matches!(
                                         id,
@@ -4071,6 +4080,9 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                                 "onlineWarp" => "active",
                                 "onlineBackupSchedule" => "daily",
                                 "onlineRemoteStatus" => "waiting",
+                                "onlineBackupProtection" => "protected",
+                                "onlineBackupRecoveryPoints" => "12",
+                                "onlineBackupLastAttempt" => "offline",
                                 "raAccount" if ra_setup => "loggedOut",
                                 "raAccount" => "loggedIn",
                                 "raPopupPosition" => "left",
@@ -4092,6 +4104,7 @@ fn fixture_settings(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &s
                             out.value_name = match id {
                                 "raAccount" => "Callan",
                                 "raConflict" => "Super Nintendo",
+                                "onlineBackupLastAttempt" => "3 Oct 02:00",
                                 _ => "",
                             }
                             .into();
