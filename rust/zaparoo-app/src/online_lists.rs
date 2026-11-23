@@ -2,20 +2,79 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 
-//! The two lists behind the Online page: cloud backup snapshots, and the
-//! remote-control activity log: what each row says. The
+//! The lists behind the Online page: cloud backup snapshots, local
+//! backups and one local backup's details, and the remote-control
+//! activity log: what each row says. The
 //! wording of a row mirrors Core's own TUI (`pkg/ui/tui/remote_activity.go`):
 //! identifiers Core sends (an operation type, an origin, an outcome) are
 //! shown as Core named them, with anything that could break the layout
 //! replaced first.
 
+/// What a list row is. An entry (a snapshot, a local backup, an activity
+/// entry) carries its own text; every other kind is named by the view.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RowKind {
+    #[default]
+    Entry,
+    /// "Back up now", leading the cloud list.
+    Run,
+    /// A local backup's details: when it was made.
+    Created,
+    /// A local backup's details: its size.
+    Size,
+    /// A local backup's details: files it skipped (`count`, possibly 0
+    /// when Core named none).
+    Skipped,
+    /// A local backup's details: Core's error summary in `detail`.
+    Error,
+    /// A local backup's details: one category, `count` files of `detail`
+    /// size.
+    Category(BackupCategory),
+    /// Delete this local backup.
+    Delete,
+}
+
+/// The categories a backup holds, in the order Core's TUI lists them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackupCategory {
+    Zaparoo,
+    Settings,
+    Inputs,
+    Saves,
+    Savestates,
+}
+
+impl BackupCategory {
+    pub const ALL: [Self; 5] = [
+        Self::Zaparoo,
+        Self::Settings,
+        Self::Inputs,
+        Self::Saves,
+        Self::Savestates,
+    ];
+
+    /// Core's token for the category.
+    pub fn token(self) -> &'static str {
+        match self {
+            Self::Zaparoo => "zaparoo",
+            Self::Settings => "settings",
+            Self::Inputs => "inputs",
+            Self::Saves => "saves",
+            Self::Savestates => "savestates",
+        }
+    }
+}
+
 /// One row a list modal shows.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ListRow {
-    /// What Accept answers with: a snapshot id, or a fixed action key.
+    pub kind: RowKind,
+    /// What Accept answers with: a snapshot id or a local backup's name.
     pub id: String,
     pub label: String,
     pub detail: String,
+    /// A number the view words itself (files in a category, skipped files).
+    pub count: i64,
     /// A row the user cannot act on (an incompatible snapshot).
     pub enabled: bool,
     /// A snapshot this device made: the view says so in its own words.
@@ -189,6 +248,7 @@ pub fn activity_row(entry: &Activity<'_>) -> ListRow {
         detail.push_str(&clean(entry.error_code));
     }
     ListRow {
+        kind: RowKind::Entry,
         id: String::new(),
         label: format!(
             "{}  {}",
@@ -196,6 +256,7 @@ pub fn activity_row(entry: &Activity<'_>) -> ListRow {
             clean(entry.operation_type)
         ),
         detail,
+        count: 0,
         enabled: true,
         this_device: false,
     }
@@ -227,17 +288,228 @@ pub fn snapshot_row(snapshot: &Snapshot<'_>) -> ListRow {
         }
     }
     ListRow {
+        kind: RowKind::Entry,
         id: snapshot.id.to_string(),
         label: short_time(snapshot.created_at),
         detail,
+        count: 0,
         enabled: !snapshot.incompatible,
         this_device: snapshot.current_device,
     }
 }
 
+/// A local backup ZIP as `settings.backup.list` names it.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LocalBackup<'a> {
+    pub name: &'a str,
+    pub created_at: &'a str,
+    pub size: i64,
+}
+
+/// The rows for the local backup list, newest first: when on the first
+/// line, its size on the second. Accept answers with the file name.
+pub fn local_backup_rows(backups: &[LocalBackup<'_>]) -> Vec<ListRow> {
+    let mut sorted: Vec<_> = backups.iter().collect();
+    sorted.sort_by(|a, b| b.created_at.cmp(a.created_at));
+    sorted
+        .into_iter()
+        .map(|backup| ListRow {
+            kind: RowKind::Entry,
+            id: backup.name.to_string(),
+            label: if backup.created_at.is_empty() {
+                clean(backup.name)
+            } else {
+                short_time(backup.created_at)
+            },
+            detail: bytes(backup.size),
+            count: 0,
+            enabled: true,
+            this_device: false,
+        })
+        .collect()
+}
+
+/// One category of an inspected local backup.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Category {
+    pub files: i64,
+    pub bytes: i64,
+    pub enabled: bool,
+}
+
+/// An inspected local backup, as `settings.backup.inspect` describes it.
+#[derive(Debug, Clone, Default)]
+pub struct LocalDetails<'a> {
+    pub name: &'a str,
+    pub created_at: &'a str,
+    pub size: i64,
+    /// "success" or "partial".
+    pub status: &'a str,
+    pub warnings: usize,
+    pub error: Option<&'a str>,
+    /// Each category Core reported, by its token.
+    pub categories: &'a [(&'a str, Category)],
+}
+
+/// The rows of one local backup's details page: when, how big, what was
+/// skipped or went wrong, each category it holds, then Delete. Only Delete
+/// can be accepted.
+pub fn local_detail_rows(details: &LocalDetails<'_>) -> Vec<ListRow> {
+    let info = |kind: RowKind, detail: String, count: i64| ListRow {
+        kind,
+        id: details.name.to_string(),
+        label: String::new(),
+        detail,
+        count,
+        enabled: true,
+        this_device: false,
+    };
+    let mut rows = vec![
+        info(RowKind::Created, short_time(details.created_at), 0),
+        info(RowKind::Size, bytes(details.size), 0),
+    ];
+    if details.status == "partial" || details.warnings > 0 {
+        rows.push(info(
+            RowKind::Skipped,
+            String::new(),
+            i64::try_from(details.warnings).unwrap_or(i64::MAX),
+        ));
+    }
+    if let Some(error) = details.error.filter(|e| !e.is_empty()) {
+        rows.push(info(RowKind::Error, clean(error), 0));
+    }
+    for category in BackupCategory::ALL {
+        let entry = details
+            .categories
+            .iter()
+            .find(|(token, _)| *token == category.token())
+            .map(|(_, entry)| *entry)
+            .filter(|entry| entry.enabled);
+        if let Some(entry) = entry {
+            rows.push(info(
+                RowKind::Category(category),
+                bytes(entry.bytes),
+                entry.files.max(0),
+            ));
+        }
+    }
+    rows.push(info(RowKind::Delete, String::new(), 0));
+    rows
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn local_backups_list_newest_first_by_their_time_and_size() {
+        let rows = local_backup_rows(&[
+            LocalBackup {
+                name: "old.zip",
+                created_at: "2026-10-01T09:00:00Z",
+                size: 2048,
+            },
+            LocalBackup {
+                name: "new.zip",
+                created_at: "2026-10-02T09:45:11Z",
+                size: 100,
+            },
+            LocalBackup {
+                name: "odd\nname.zip",
+                created_at: "",
+                size: 0,
+            },
+        ]);
+        let ids: Vec<_> = rows.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, ["new.zip", "old.zip", "odd\nname.zip"]);
+        assert_eq!(rows[0].label, "2 Oct 09:45");
+        assert_eq!(rows[0].detail, "100 B");
+        assert_eq!(rows[1].detail, "2.0 KB");
+        assert_eq!(
+            rows[2].label, "odd\u{FFFD}name.zip",
+            "no time: the file name"
+        );
+        assert!(rows.iter().all(|r| r.kind == RowKind::Entry && r.enabled));
+    }
+
+    #[test]
+    fn local_details_list_what_the_backup_holds_then_delete() {
+        let categories = [
+            (
+                "saves",
+                Category {
+                    files: 12,
+                    bytes: 4096,
+                    enabled: true,
+                },
+            ),
+            (
+                "settings",
+                Category {
+                    files: 3,
+                    bytes: 10,
+                    enabled: true,
+                },
+            ),
+            (
+                "inputs",
+                Category {
+                    files: 9,
+                    bytes: 9,
+                    enabled: false,
+                },
+            ),
+            (
+                "unknown",
+                Category {
+                    files: 1,
+                    bytes: 1,
+                    enabled: true,
+                },
+            ),
+        ];
+        let rows = local_detail_rows(&LocalDetails {
+            name: "b.zip",
+            created_at: "2026-10-02T09:45:11Z",
+            size: 4106,
+            status: "partial",
+            warnings: 2,
+            error: Some("disk\nfull"),
+            categories: &categories,
+        });
+        let kinds: Vec<_> = rows.iter().map(|r| r.kind).collect();
+        assert_eq!(
+            kinds,
+            [
+                RowKind::Created,
+                RowKind::Size,
+                RowKind::Skipped,
+                RowKind::Error,
+                RowKind::Category(BackupCategory::Settings),
+                RowKind::Category(BackupCategory::Saves),
+                RowKind::Delete,
+            ],
+            "a category left out of the backup, or one this build does not know, is not listed"
+        );
+        assert_eq!(rows[2].count, 2);
+        assert_eq!(rows[3].detail, "disk\u{FFFD}full");
+        assert_eq!(rows[5].count, 12);
+        assert_eq!(rows[5].detail, "4.0 KB");
+        assert!(rows.iter().all(|r| r.id == "b.zip"));
+    }
+
+    #[test]
+    fn a_complete_local_backup_has_no_skipped_or_error_row() {
+        let rows = local_detail_rows(&LocalDetails {
+            name: "b.zip",
+            created_at: "2026-10-02T09:45:11Z",
+            size: 1,
+            status: "success",
+            ..LocalDetails::default()
+        });
+        let kinds: Vec<_> = rows.iter().map(|r| r.kind).collect();
+        assert_eq!(kinds, [RowKind::Created, RowKind::Size, RowKind::Delete]);
+    }
 
     #[test]
     fn short_time_reads_core_timestamps_and_keeps_anything_else() {

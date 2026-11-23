@@ -1627,6 +1627,10 @@ pub struct SettingsResult {
     /// "daily", "weekly", or "manual".
     #[serde(default)]
     pub backup_remote_schedule: Option<String>,
+    /// Auto Backup; unset in Core's config means on. `None` when Core
+    /// predates it (v2.23.0).
+    #[serde(default)]
+    pub backup_remote_auto_backup: Option<bool>,
     /// The global launcher preference: launcher ids and groups, tried in
     /// order for every system. `None` when Core predates it (v2.21.0).
     #[serde(default)]
@@ -1805,6 +1809,88 @@ pub struct BackupStatusEntry {
     /// stored.
     #[serde(default)]
     pub last_run_no_changes: bool,
+    /// Auto Backup: back up shortly after each game stops. Remote side
+    /// only; `None` from a Core that predates it (v2.23.0).
+    #[serde(default)]
+    pub auto_backup: Option<bool>,
+    /// The Online service's view of this device's backups. Remote side
+    /// only; absent when unlinked or when the service did not say.
+    #[serde(default)]
+    pub protection: Option<BackupProtection>,
+    /// The last scheduled backup that failed or was skipped, until a
+    /// later one succeeds. Remote side only.
+    #[serde(default)]
+    pub last_attempt: Option<BackupAttempt>,
+}
+
+/// The Online service's protection state for this device.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupProtection {
+    /// "never", "removed", "failed", "stale", or "protected"; any other
+    /// value is unknown.
+    #[serde(default)]
+    pub state: String,
+    #[serde(default)]
+    pub recovery_points: i64,
+    #[serde(default)]
+    pub last_success_at: Option<String>,
+    #[serde(default)]
+    pub last_verified_at: Option<String>,
+}
+
+/// A scheduled backup that ended without a snapshot.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupAttempt {
+    #[serde(default)]
+    pub at: String,
+    /// "failed" or "skipped".
+    #[serde(default)]
+    pub status: String,
+    /// A short lowercase code such as `quota_exceeded` or `offline`.
+    #[serde(default)]
+    pub reason: String,
+}
+
+/// One local backup ZIP from `settings.backup.list`: metadata only.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalBackupListItem {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub created_at: String,
+    #[serde(default)]
+    pub size: i64,
+}
+
+/// A local backup ZIP with its manifest, from `settings.backup.inspect`.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalBackup {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub created_at: String,
+    #[serde(default)]
+    pub size: i64,
+    /// "success", or "partial" when files were skipped.
+    #[serde(default)]
+    pub status: String,
+    /// "valid" or "unchecked".
+    #[serde(default)]
+    pub integrity: String,
+    #[serde(default)]
+    pub categories: HashMap<String, BackupCategoryStatus>,
+    #[serde(default)]
+    pub warnings: Vec<BackupWarning>,
+    #[serde(default)]
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
@@ -2038,6 +2124,8 @@ pub struct UpdateSettingsParams {
     /// "daily", "weekly", or "manual"; Core rejects any other value.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub backup_remote_schedule: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backup_remote_auto_backup: Option<bool>,
     /// Replaces the whole global launcher preference; an empty list clears
     /// it. Core refuses an entry that names no launcher or group unless the
     /// stored list already holds it.

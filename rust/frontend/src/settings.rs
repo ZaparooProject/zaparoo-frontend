@@ -70,8 +70,8 @@ pub(crate) fn inputs(ctx: &Ctx) -> rules::Inputs {
     // One lock for all of it: a guard held across the struct literal is
     // still held when a second `lock` in it runs, which deadlocks.
     let (
-        can_link_online,
-        online_linked,
+        (can_link_online, online_linked),
+        online_backup,
         launcher_preference,
         ra_logged_in,
         ra_installed,
@@ -83,9 +83,17 @@ pub(crate) fn inputs(ctx: &Ctx) -> rules::Inputs {
     ) = {
         let shared = lock(&ctx.shared);
         let (installed, conflicts) = ra_state(&shared);
+        let online = &shared.online;
         (
-            shared.online.available,
-            shared.online.linked,
+            (online.available, online.linked),
+            rules::Inputs {
+                online_auto_backup: online.auto_backup.is_some(),
+                online_backup_manual: online.backup_schedule == "manual",
+                online_backup_running: online.activity.is_running(),
+                online_backup_protection: online.protection.is_some(),
+                online_backup_last_attempt: online.last_attempt.is_some(),
+                ..rules::Inputs::default()
+            },
             shared.launcher_preference.is_some(),
             shared.ra.cfg.logged_in(),
             installed,
@@ -114,6 +122,11 @@ pub(crate) fn inputs(ctx: &Ctx) -> rules::Inputs {
         can_request_playtime_access: ctx.playtime_access.available(),
         can_link_online,
         online_linked,
+        online_auto_backup: online_backup.online_auto_backup,
+        online_backup_manual: online_backup.online_backup_manual,
+        online_backup_running: online_backup.online_backup_running,
+        online_backup_protection: online_backup.online_backup_protection,
+        online_backup_last_attempt: online_backup.online_backup_last_attempt,
         is_mister: ctx.is_mister,
         crt_enabled: ctx.crt_enabled,
         debug_build: cfg!(debug_assertions),
@@ -163,6 +176,15 @@ fn current_value(ctx: &Ctx, id: &str) -> String {
         "onlineWarp" => crate::online::warp_value(&shared.online).to_string(),
         "onlineBackupSchedule" => shared.online.backup_schedule.clone(),
         "onlineRemoteStatus" => crate::online::remote_status_value(&shared.online).to_string(),
+        "onlineBackupActivity" => crate::online::activity_value(&shared.online).to_string(),
+        "onlineBackupProtection" => crate::online::protection_value(&shared.online).to_string(),
+        "onlineBackupRecoveryPoints" => shared
+            .online
+            .protection
+            .as_ref()
+            .map_or(0, |p| p.recovery_points)
+            .to_string(),
+        "onlineBackupLastAttempt" => crate::online::attempt_value(&shared.online).to_string(),
         "raPopupPosition" => shared.ra.cfg.popup_position.token().to_string(),
         "raAccount" => if shared.ra.cfg.logged_in() {
             "loggedIn"
@@ -180,6 +202,13 @@ fn value_name(ctx: &Ctx, id: &str) -> SharedString {
     let shared = lock(&ctx.shared);
     match id {
         "onlineStatus" => shared.online.device_name.clone().unwrap_or_default().into(),
+        "onlineBackupLastAttempt" => shared
+            .online
+            .last_attempt
+            .as_ref()
+            .map(|a| zaparoo_app::online_lists::short_time(&a.at))
+            .unwrap_or_default()
+            .into(),
         "raAccount" => shared.ra.cfg.username.as_str().into(),
         "raConflict" => ra_state(&shared).1.join(", ").into(),
         // A user scheme and a chosen image are named as written.
@@ -234,6 +263,7 @@ fn checked(ctx: &Ctx, id: &str) -> bool {
         "onlineRemoteControl" => shared.online.features.remote_control,
         "onlineLibrarySync" => shared.online.features.library,
         "onlineCloudBackup" => shared.online.features.cloud_backup,
+        "onlineAutoBackup" => shared.online.auto_backup.unwrap_or(false),
         "raLaunchers" => shared.launcher_preference.as_deref().is_some_and(|list| {
             zaparoo_app::launcher_preference::contains(
                 list,
@@ -454,6 +484,7 @@ fn action_status(
 /// first: an account linked, `RetroAchievements` installed.
 fn waits(id: &str, inputs: &rules::Inputs, online_linked: bool) -> bool {
     (rules::needs_online_link(id) && !online_linked)
+        || (rules::needs_backup_schedule(id) && inputs.online_backup_manual)
         || (rules::needs_ra_install(id) && !inputs.ra_installed)
 }
 
@@ -555,6 +586,11 @@ fn rows(ctx: &Ctx, app: &App, page: crate::SettingsPage) -> Vec<SettingsRow> {
                         || crate::core_settings::refused(&lock(&ctx.shared), id)
                     {
                         out.enabled = false;
+                        // Which of its two waits holds Auto Backup back:
+                        // the view names the one the user can fix next.
+                        if rules::needs_backup_schedule(id) && online_linked {
+                            out.value = SharedString::from("manual");
+                        }
                     }
                     // A row that needs Zaparoo Pro or Warp stays usable:
                     // it carries the Pro badge, and Accept explains.
@@ -882,6 +918,25 @@ pub(crate) fn show_return(ctx: &Ctx, app: &App, page: crate::SettingsPage, row: 
     render(ctx, app);
     remember_focus(ctx, app);
     crate::router::transition_to_screen(app, crate::Screen::Settings, -1);
+}
+
+/// Apply a change to what the open page shows that can add or drop rows
+/// around the cursor (Core's backup report arriving), keeping the cursor
+/// on the row it was on.
+pub(crate) fn keep_seat(ctx: &Ctx, app: &App, change: impl FnOnce()) {
+    let (_, before, index) = page_rows_now(ctx, app);
+    let id = before
+        .get(index)
+        .filter(|row| row.is_navigable())
+        .map(|row| row.id());
+    change();
+    let (_, rows, _) = page_rows_now(ctx, app);
+    let seat = id.map_or_else(
+        || rules::first_navigable(&rows),
+        |id| rules::seat_of(&rows, id),
+    );
+    app.global::<SettingsView>()
+        .set_index(i32::try_from(seat).unwrap_or(0));
 }
 
 /// Put the cursor on `row` of the open page, after the row it was on has
@@ -1333,6 +1388,7 @@ fn accept(ctx: &Ctx, app: &App, id: &str, control: Control) {
                 crate::online::accept_account(ctx, app);
             }
             "onlineManageBackups" => crate::online_list::open_backups(ctx, app),
+            "onlineLocalBackups" => crate::online_list::open_local(ctx, app),
             "onlineRemoteActivity" => crate::online_list::open_activity(ctx, app),
             "crtCalibration" => crate::router::open_crt_calibration(ctx, app),
             "launcherPreference" => crate::launcher_prefs::open(ctx, app),
@@ -1413,6 +1469,10 @@ fn toggle(ctx: &Ctx, app: &App, id: &str) {
     // Core owns every Online consent setting; nothing is saved locally.
     if let Some(feature) = crate::online::Feature::from_id(id) {
         crate::online::toggle_feature(ctx, app, feature);
+        return;
+    }
+    if id == "onlineAutoBackup" {
+        crate::online::toggle_auto_backup(ctx, app);
         return;
     }
     // Core owns the launcher preference; MiSTer_RA's cfg holds the rest.

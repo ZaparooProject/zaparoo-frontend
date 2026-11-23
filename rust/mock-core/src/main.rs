@@ -9,6 +9,7 @@
 // override point at this address; production frontend.toml still
 // defaults to 7497.
 
+mod backup;
 mod decks;
 mod device;
 mod events;

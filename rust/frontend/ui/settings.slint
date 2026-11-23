@@ -341,7 +341,13 @@ export global SettingsLabels {
         if (id == "onlineLibrarySync") { return @tr("Library sync"); }
         if (id == "onlineCloudBackup") { return @tr("Cloud backup"); }
         if (id == "onlineBackupSchedule") { return @tr("Schedule"); }
+        if (id == "onlineAutoBackup") { return @tr("Auto backup"); }
         if (id == "onlineManageBackups") { return @tr("Manage backups"); }
+        if (id == "onlineLocalBackups") { return @tr("Local backups"); }
+        if (id == "onlineBackupActivity") { return @tr("Running now"); }
+        if (id == "onlineBackupProtection") { return @tr("Protection"); }
+        if (id == "onlineBackupRecoveryPoints") { return @tr("Recovery points"); }
+        if (id == "onlineBackupLastAttempt") { return @tr("Last attempt"); }
         if (id == "onlineRemoteStatus") { return @tr("Status"); }
         if (id == "onlineRemoteActivity") { return @tr("Activity"); }
         // About.
@@ -433,10 +439,16 @@ export global SettingsLabels {
 
     // What a dimmed row says instead of its description, when the reason
     // is one the user can act on. Empty for a row that is only busy.
-    public pure function disabled-reason(id: string) -> string {
+    public pure function disabled-reason(row: SettingsRow) -> string {
+        let id = row.id;
+        // Auto backup waits for an account, then for a schedule: Rust
+        // marks the second with the schedule's value.
+        if (id == "onlineAutoBackup" && row.value == "manual") {
+            return @tr("Choose a Daily or Weekly schedule first.");
+        }
         if (id == "onlineAllFeatures" || id == "onlineRemoteControl" || id == "playtimeSync"
             || id == "onlineLibrarySync" || id == "onlineCloudBackup" || id == "onlineBackupSchedule"
-            || id == "onlineManageBackups") {
+            || id == "onlineAutoBackup" || id == "onlineManageBackups") {
             return @tr("Link your Zaparoo Online account first.");
         }
         // The two media jobs cannot run at once; each waits for the other.
@@ -512,7 +524,9 @@ export global SettingsLabels {
         if (id == "onlineLibrarySync") { return @tr("Syncs your games and collections with your Online account."); }
         if (id == "onlineCloudBackup") { return @tr("Backs up this device to the cloud on a schedule."); }
         if (id == "onlineBackupSchedule") { return @tr("Sets how often automatic cloud backup runs."); }
+        if (id == "onlineAutoBackup") { return @tr("Backs up your saves every time you finish playing."); }
         if (id == "onlineManageBackups") { return @tr("Backs up now, or lists cloud backups to restore."); }
+        if (id == "onlineLocalBackups") { return @tr("Lists the backups saved on this device, to check or delete."); }
         if (id == "onlineRemoteActivity") { return @tr("Shows what remote commands have done on this device."); }
         if (id == "pairDevice") { return @tr("Shows a PIN to pair an app."); }
         if (id == "aboutLicense") { return @tr("Shows the version, build date, license terms, and contributors."); }
@@ -724,6 +738,37 @@ export global SettingsLabels {
             if (value == "active") { return @tr("Active"); }
             if (value == "inactive") { return @tr("Not active"); }
             return @tr("Checking…");
+        }
+        if (id == "onlineBackupActivity") {
+            if (value == "paused") { return @tr("Paused while a game runs"); }
+            if (value == "slowed") { return @tr("Slowed while a game runs"); }
+            return @tr("At full speed");
+        }
+        if (id == "onlineBackupProtection") {
+            if (value == "protected") { return @tr("Protected"); }
+            if (value == "stale") { return @tr("Out of date"); }
+            if (value == "failed") { return @tr("Last backup failed"); }
+            if (value == "removed") { return @tr("Backups removed"); }
+            if (value == "never") { return @tr("Never backed up"); }
+            return @tr("Unknown");
+        }
+        if (id == "onlineBackupRecoveryPoints") { return value; }
+        if (id == "onlineBackupLastAttempt") {
+            if (value == "busy") { return @tr("Skipped, Zaparoo was busy"); }
+            if (value == "offline") { return @tr("Skipped, no network"); }
+            if (value == "not_available") { return @tr("Skipped, cloud backup not available"); }
+            if (value == "interrupted") { return @tr("Interrupted"); }
+            if (value == "quota_exceeded") { return @tr("Cloud storage is full"); }
+            if (value == "rate_limited") { return @tr("Too many backups, try later"); }
+            if (value == "files_changed") { return @tr("Files changed during backup"); }
+            if (value == "requires_newer_core") { return @tr("Needs a newer Zaparoo Core"); }
+            if (value == "backup_too_large") { return @tr("Backup is too large"); }
+            if (value == "payload_too_large") { return @tr("Too large to upload"); }
+            if (value == "missing_objects") { return @tr("Upload was incomplete"); }
+            if (value == "server_error") { return @tr("Zaparoo Online had a problem"); }
+            if (value == "network_error") { return @tr("Network error"); }
+            if (value == "skipped") { return @tr("Skipped"); }
+            return @tr("Failed");
         }
         if (id == "onlineRemoteStatus") {
             if (value == "disabled") { return @tr("Off"); }
@@ -1215,6 +1260,9 @@ export component SettingsRowView inherits Rectangle {
             ? @tr("Linked as {}", root.entry.value-name)
             : (root.entry.id == "raAccount" && root.entry.value == "loggedIn" && root.entry.value-name != "")
                 ? @tr("Logged in as {}", root.entry.value-name)
+            // When it ended, after why.
+            : (root.entry.id == "onlineBackupLastAttempt" && root.entry.value-name != "")
+                ? @tr("{}, {}", SettingsLabels.value(root.entry.id, root.entry.value), root.entry.value-name)
                 // A user color scheme, a chosen background or logo image,
                 // and the systems a RetroAchievements preference skips show
                 // their own names, as written.

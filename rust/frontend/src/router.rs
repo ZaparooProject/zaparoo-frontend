@@ -852,6 +852,14 @@ fn dialog_accept(ctx: &Ctx, app: &App, kind: DialogKind, focus: usize) {
                 crate::online_list::restore_confirmed(ctx, app);
             }
         }
+        DialogKind::DeleteLocalBackup => {
+            close_dialog(app);
+            if confirmed {
+                crate::online_list::delete_confirmed(ctx, app);
+            } else {
+                crate::online_list::delete_declined(ctx);
+            }
+        }
         DialogKind::UpdateStop => {
             close_dialog(app);
             crate::update::stop_answered(confirmed);
