@@ -332,7 +332,10 @@ When adding a new screen or routing path, follow this contract:
    Accept, Back and hold release).
 
 6. **A cold start shows the curtain, then the restored screen.** Nothing
-   else is ever painted in between. A restore fills its target under the
+   else is ever painted in between. The one exception is a fresh start with
+   Settings > Profiles > Choose profile at startup on: the curtain lifts onto
+   the profile picker, and the saved screen comes after the pick as a
+   forward route. A restore fills its target under the
    boot curtain and `router::transition_to_screen` lifts it through
    `router::finish_restore`, the only place the curtain comes down. A new
    restore target must not publish a parent or source screen first, and a

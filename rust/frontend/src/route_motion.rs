@@ -8295,7 +8295,7 @@ fn about_starts_at_top_only_on_fresh_entry_and_back_keeps_settings_focus() {
         shared.persist.active_screen = "about".into();
         shared.persist.about_scroll_milli = 725;
     }
-    crate::restore_core_independent(&ctx, &app);
+    assert!(crate::restore_core_independent(&ctx, &app));
     settle(&window);
     assert_eq!(app.global::<crate::AboutView>().get_scroll_milli(), 725);
     crate::router::enter_about(&ctx, &app, EntryMode::Fresh);
@@ -14883,4 +14883,147 @@ fn an_unreachable_core_shows_the_hub_and_never_the_picker_later() {
         &ctx.shared
     )));
     assert!(!app.global::<Shell>().get_boot_curtain());
+}
+
+fn kiosk_locked(profile_switching: bool) -> zaparoo_core::profile_types::KioskState {
+    zaparoo_core::profile_types::KioskState {
+        state: "locked".into(),
+        settings: Some(zaparoo_core::profile_types::KioskSettings { profile_switching }),
+    }
+}
+
+/// A `kiosk.state` or `profiles.active` notification that lands while the
+/// picker's fetch is out is newer than its reply, and wins.
+#[test]
+fn notifications_during_the_fetch_win_over_its_reply() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _runtime, ctx, ticket) = picker_start("hub");
+    {
+        let mut shared = crate::router::lock(&ctx.shared);
+        shared.kiosk = kiosk_locked(true);
+        shared.kiosk_seq += 1;
+    }
+    crate::router::store_active_profile(&ctx, &app, Some(active("sam")));
+    crate::profile_picker::landed_for_test(
+        &ctx,
+        &app,
+        ticket,
+        picker_profiles(),
+        Some("kid"),
+        zaparoo_core::profile_types::KioskState::default(),
+    );
+    assert_eq!(picker_names(&app), ["KID", "SAM"], "the lock still holds");
+    let shared = crate::router::lock(&ctx.shared);
+    assert!(shared.kiosk.is_locked());
+    assert_eq!(shared.active_profile, Some(active("sam")));
+    drop(shared);
+    let view = app.global::<crate::ProfilePickerView>();
+    assert_eq!(
+        view.get_list_sel(),
+        1,
+        "focus is on the newer active profile"
+    );
+    assert_eq!(
+        view.get_list_rows().row_data(1).map(|c| c.tags.to_string()),
+        Some("Active".into()),
+        "the marker is on the same row"
+    );
+}
+
+/// A kiosk state Core could not report skips the picker; a launch policy
+/// that could not be read keeps the profiles but hides Shared profile.
+#[test]
+fn an_unread_lock_skips_the_picker_and_an_unread_policy_hides_shared() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _runtime, ctx, ticket) = picker_start("hub");
+    crate::profile_picker::landed_partly_for_test(
+        &ctx,
+        &app,
+        ticket,
+        picker_profiles(),
+        None,
+        Some(false),
+    );
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    assert!(!shell.get_boot_curtain());
+
+    let (app, _runtime, ctx, ticket) = picker_start("hub");
+    crate::profile_picker::landed_partly_for_test(
+        &ctx,
+        &app,
+        ticket,
+        picker_profiles(),
+        Some(zaparoo_core::profile_types::KioskState::default()),
+        None,
+    );
+    assert_eq!(picker_names(&app), ["MUM", "KID", "SAM"]);
+}
+
+/// A lock that stops profile switching while the picker is open ends it,
+/// as it would have skipped it at the start.
+#[test]
+fn a_lock_without_switching_ends_the_open_picker() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _runtime, ctx, ticket) = picker_start("hub");
+    crate::profile_picker::landed_for_test(
+        &ctx,
+        &app,
+        ticket,
+        picker_profiles(),
+        Some("kid"),
+        zaparoo_core::profile_types::KioskState::default(),
+    );
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::ProfilePicker);
+    crate::router::lock(&ctx.shared).kiosk = kiosk_locked(false);
+    crate::profile_picker::kiosk_changed(&ctx, &app);
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+}
+
+/// Cancel under the curtain while the fetch is out drops the picker: its
+/// late answer never opens it.
+#[test]
+fn cancel_under_the_curtain_retires_the_picker_fetch() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _runtime, ctx, ticket) = picker_start("hub");
+    crate::router::handle_action(&ctx, &app, "cancel");
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    shell.set_boot_curtain(true);
+    crate::profile_picker::landed_for_test(
+        &ctx,
+        &app,
+        ticket,
+        picker_profiles(),
+        None,
+        zaparoo_core::profile_types::KioskState::default(),
+    );
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+}
+
+/// A saved Settings waited for the picker; when the start drops the
+/// picker without Core, Settings still comes back.
+#[test]
+fn a_saved_settings_comes_back_when_the_picker_is_dropped() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, _window, _runtime, ctx) = cold_start("settings");
+    crate::profile_picker::owe(&mut crate::router::lock(&ctx.shared));
+    crate::give_up_boot_restore(&ctx, &app);
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::Settings);
+    assert!(!shell.get_boot_curtain());
+
+    // Cancel once the catalog is in and the fetch is out.
+    let (app, _runtime, ctx, _ticket) = picker_start("settings");
+    crate::router::handle_action(&ctx, &app, "cancel");
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::Settings);
+    assert!(!shell.get_boot_curtain());
+    // The fetch never answers.
+    let (app, _runtime, _ctx, _ticket) = picker_start("settings");
+    advance(crate::router::RESTORE_TIMEOUT.as_millis() as u64 + 1);
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::Settings);
+    assert!(!shell.get_boot_curtain());
 }

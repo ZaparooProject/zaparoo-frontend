@@ -161,6 +161,8 @@ struct RpcResponse {
 /// The wire category (`error.data.category`) meaning the launch stopped for
 /// something the user can act on. See `ClientError::is_launch_repair`.
 const LAUNCH_REPAIR_CATEGORY: &str = "launch_repair";
+/// JSON-RPC's "method not found" error code.
+const METHOD_NOT_FOUND: i64 = -32601;
 /// Core's `error.data.category` for a request refused because something
 /// else holds what it needs.
 const BUSY_CATEGORY: &str = "busy";
@@ -206,6 +208,8 @@ struct RpcErrorData {
 
 #[derive(Debug, Deserialize, Clone)]
 struct RpcError {
+    #[serde(default)]
+    code: Option<i64>,
     message: String,
     #[serde(default)]
     data: Option<RpcErrorData>,
@@ -227,6 +231,8 @@ pub struct ClientError {
     /// inline `HashMap` would make every `Result<_, ClientError>` carry its
     /// size whether or not this field is ever set.
     pub params: Option<Box<HashMap<String, String>>>,
+    /// The JSON-RPC `error.code`, when Core answered with one.
+    code: Option<i64>,
     /// The request never got an answer because there was no live link:
     /// not connected, or the session ended while it waited. Retrying once
     /// Core is connected again can succeed; nothing Core said applies.
@@ -240,6 +246,7 @@ impl ClientError {
             category: None,
             reason: None,
             params: None,
+            code: None,
             transport: false,
         }
     }
@@ -262,6 +269,7 @@ impl ClientError {
             category: data.category,
             reason: data.reason,
             params: data.params.map(Box::new),
+            code: err.code,
             transport: false,
         }
     }
@@ -270,6 +278,13 @@ impl ClientError {
     /// not an answer from Core.
     pub fn is_transport(&self) -> bool {
         self.transport
+    }
+
+    /// Whether Core answered that it has no such method: a Core older than
+    /// the method. A reply Core sent but this client could not read is
+    /// not this.
+    pub fn is_method_not_found(&self) -> bool {
+        self.code == Some(METHOD_NOT_FOUND)
     }
 
     /// Whether Core refused this because something else holds what the
@@ -1816,6 +1831,21 @@ mod tests {
             err.message,
             "this launcher's plugin for this system is not installed"
         );
+    }
+
+    #[test]
+    fn only_core_s_method_not_found_code_reads_as_an_unknown_method() {
+        let err = error_from(&serde_json::json!({
+            "code": -32601,
+            "message": "method not found",
+        }));
+        assert!(err.is_method_not_found());
+        let err = error_from(&serde_json::json!({
+            "code": -32603,
+            "message": "internal error",
+        }));
+        assert!(!err.is_method_not_found());
+        assert!(!ClientError::plain("bad reply").is_method_not_found());
     }
 
     #[test]

@@ -1142,7 +1142,7 @@ fn run_application(
         // Settings, About and Credits come back after the pick too.
         profile_picker::owe(&mut lock(&ctx.shared));
     } else {
-        restore_core_independent(&ctx, &app);
+        let _ = restore_core_independent(&ctx, &app);
     }
     {
         let ctx = ctx.clone();
@@ -1217,16 +1217,18 @@ fn run_application(
 /// Settings/About are core-independent: restore them immediately
 /// instead of holding them behind the first catalog Ready, the way
 /// `MainLayout`'s `coreIndependentStartupVisible` path paints them.
-fn restore_core_independent(ctx: &Arc<Ctx>, app: &App) {
+pub(crate) fn restore_core_independent(ctx: &Ctx, app: &App) -> bool {
     let target = lock(&ctx.shared).persist.active_screen.clone();
-    if matches!(target.as_str(), "settings" | "about" | "credits") {
-        lock(&ctx.shared).restore_pending = false;
-        match target.as_str() {
-            "settings" => settings::enter(ctx, app, EntryMode::Restore),
-            "about" => router::enter_about(ctx, app, EntryMode::Restore),
-            _ => credits::enter(ctx, app, EntryMode::Restore),
-        }
+    if !matches!(target.as_str(), "settings" | "about" | "credits") {
+        return false;
     }
+    lock(&ctx.shared).restore_pending = false;
+    match target.as_str() {
+        "settings" => settings::enter(ctx, app, EntryMode::Restore),
+        "about" => router::enter_about(ctx, app, EntryMode::Restore),
+        _ => credits::enter(ctx, app, EntryMode::Restore),
+    }
+    true
 }
 
 /// Walk the customization folder off the event loop and repaint what
@@ -1547,7 +1549,11 @@ fn bind_core_state(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
                         continue;
                     };
                     let _ = weak.upgrade_in_event_loop(move |app| {
-                        lock(&ctx.shared).kiosk = state;
+                        {
+                            let mut shared = lock(&ctx.shared);
+                            shared.kiosk = state;
+                            shared.kiosk_seq = shared.kiosk_seq.wrapping_add(1);
+                        }
                         profile_picker::kiosk_changed(&ctx, &app);
                     });
                 }
@@ -2292,10 +2298,15 @@ fn apply_catalog(ctx: &Arc<Ctx>, app: &App, status: &ResourceStatus<CatalogData>
             // The error is on the Hub, so show it. A restore that would
             // run on a later catalog is dropped: by then the Hub is in use.
             if app.global::<Shell>().get_boot_curtain() {
-                {
+                let retired = {
                     let mut shared = lock(&ctx.shared);
                     shared.restore_pending = false;
-                    profile_picker::drop_owed(&mut shared);
+                    profile_picker::retire(&mut shared)
+                };
+                // Settings, About and Credits waited for the picker; they
+                // need no Core, so they still come back.
+                if retired {
+                    let _ = restore_core_independent(ctx, app);
                 }
                 router::finish_restore(app);
             }
@@ -2312,12 +2323,15 @@ fn give_up_boot_restore(ctx: &Arc<Ctx>, app: &App) {
     if !app.global::<Shell>().get_boot_curtain() {
         return;
     }
-    {
+    let retired = {
         let mut shared = lock(&ctx.shared);
         shared.restore_pending = false;
-        profile_picker::drop_owed(&mut shared);
-    }
+        profile_picker::retire(&mut shared)
+    };
     hub::render(ctx, app);
+    if retired {
+        let _ = restore_core_independent(ctx, app);
+    }
     router::finish_restore(app);
 }
 

@@ -421,7 +421,14 @@ fn scanned(ctx: &Ctx, app: &App, verified: &VerifiedProfile) {
             }
         }
         Some(Some(target)) => {
+            // A typed PIN is being checked: one switch at a time. The card
+            // can still be scanned again if Core refuses the PIN.
+            if with(|m| m.checking) {
+                start_scan(ctx, app);
+                return;
+            }
             if verified.profile_id == target {
+                with(|m| m.checking = true);
                 let switch_id = lock(&ctx.shared)
                     .core
                     .profiles

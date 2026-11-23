@@ -15,7 +15,7 @@ use slint::{ComponentHandle, SharedString};
 use zaparoo_app::media_list as list_rules;
 use zaparoo_app::profile_picker::{self as rules, Entry, Kiosk, Row};
 use zaparoo_core::input_actions::actions;
-use zaparoo_core::profile_types::{KioskState, Profile};
+use zaparoo_core::profile_types::{ActiveProfile, KioskState, Profile};
 
 use crate::router::{lock, Ctx, Shared};
 use crate::{App, GridCell, ProfilePickerInput, ProfilePickerView};
@@ -47,6 +47,31 @@ pub struct Model {
     busy: bool,
     /// Bumped by every fetch, so a late answer is dropped.
     ticket: u64,
+    /// `Shared::kiosk_seq` and `Shared::active_profile_seq` when the fetch
+    /// began: a notification since then is newer than the fetch's answer.
+    kiosk_seq: u64,
+    active_seq: u64,
+}
+
+/// What the fetch learned of the kiosk lock.
+#[derive(Debug)]
+enum KioskRead {
+    State(KioskState),
+    /// A Core older than kiosk mode: no lock.
+    Unsupported,
+    /// The read failed: the lock is unknown.
+    Failed,
+}
+
+/// Core's answers to the picker's fetch.
+#[derive(Debug)]
+struct Fetched {
+    profiles: Option<Vec<Profile>>,
+    /// `Err` when the read failed; `Ok(None)` is the shared profile.
+    active: Result<Option<ActiveProfile>, ()>,
+    kiosk: Option<KioskRead>,
+    /// `None` when the launch policy could not be read.
+    require_for_launch: Option<bool>,
 }
 
 /// The picker is the active screen.
@@ -65,14 +90,14 @@ pub(crate) fn owed(shared: &Shared) -> bool {
     shared.profile_picker.start == Start::Owed
 }
 
-/// The start cannot reach Core after all: it shows the Hub, never the
-/// picker over it later.
-pub(crate) fn drop_owed(shared: &mut Shared) {
+/// The start gave up on the picker before it opened (Core unreachable,
+/// the catalog failed, Cancel under the curtain): it never shows over the
+/// screen that comes instead, and a late fetch answer is dropped. Returns
+/// whether the picker was still to come.
+pub(crate) fn retire(shared: &mut Shared) -> bool {
     let model = &mut shared.profile_picker;
-    if model.start == Start::Owed {
-        model.start = Start::Done;
-    }
     model.ticket = model.ticket.wrapping_add(1);
+    std::mem::take(&mut model.start) != Start::Done
 }
 
 fn kiosk_of(state: &KioskState) -> Kiosk {
@@ -98,6 +123,7 @@ fn entries(profiles: &[Profile]) -> Vec<Entry<'_>> {
 pub(crate) fn begin(ctx: &Ctx, app: &App, restore: bool) {
     let ticket = {
         let mut shared = lock(&ctx.shared);
+        let shared = &mut *shared;
         let model = &mut shared.profile_picker;
         model.start = if restore {
             Start::ThenRestore
@@ -105,6 +131,8 @@ pub(crate) fn begin(ctx: &Ctx, app: &App, restore: bool) {
             Start::ThenHub
         };
         model.ticket = model.ticket.wrapping_add(1);
+        model.kiosk_seq = shared.kiosk_seq;
+        model.active_seq = shared.active_profile_seq;
         model.ticket
     };
     // A Core that never answers lifts the curtain onto the Hub.
@@ -126,56 +154,74 @@ pub(crate) fn begin(ctx: &Ctx, app: &App, restore: bool) {
                 None
             }
         };
-        // A Core without kiosk mode answers with an error: off.
-        let kiosk = kiosk.unwrap_or_default();
-        let require = settings
-            .ok()
-            .and_then(|s| s.profiles_require_for_launch)
-            .unwrap_or(false);
-        let active = active.ok().flatten().map(|p| p.profile_id);
+        let kiosk = Some(match kiosk {
+            Ok(state) => KioskRead::State(state),
+            Err(error) if error.is_method_not_found() => KioskRead::Unsupported,
+            Err(error) => {
+                tracing::warn!("kiosk state for the picker failed: {}", error.message);
+                KioskRead::Failed
+            }
+        });
+        let fetched = Fetched {
+            profiles,
+            active: active.map_err(|_| ()),
+            kiosk,
+            require_for_launch: settings
+                .ok()
+                .map(|s| s.profiles_require_for_launch.unwrap_or(false)),
+        };
         let _ = weak.upgrade_in_event_loop(move |app| {
-            landed(
-                &ctx2,
-                &app,
-                ticket,
-                profiles,
-                active.as_deref(),
-                kiosk,
-                require,
-            );
+            landed(&ctx2, &app, ticket, fetched);
         });
     });
 }
 
-fn landed(
-    ctx: &Ctx,
-    app: &App,
-    ticket: u64,
-    profiles: Option<Vec<Profile>>,
-    active: Option<&str>,
-    kiosk: KioskState,
-    require: bool,
-) {
+fn landed(ctx: &Ctx, app: &App, ticket: u64, fetched: Fetched) {
     // The restore timed out or Core went away meanwhile: the Hub is up.
     if lock(&ctx.shared).profile_picker.ticket != ticket
         || !app.global::<crate::Shell>().get_boot_curtain()
     {
         return;
     }
+    // The snapshot seeds the active profile unless a notification has
+    // already said something newer; focus, the marker and Accept all read
+    // the one stored value.
+    let seed_active = {
+        let shared = lock(&ctx.shared);
+        shared.active_profile_seq == shared.profile_picker.active_seq
+    };
+    if let (true, Ok(active)) = (seed_active, fetched.active) {
+        crate::router::store_active_profile(ctx, app, active);
+    }
     let shows = {
         let mut shared = lock(&ctx.shared);
         let shared = &mut *shared;
-        let profiles = profiles.unwrap_or_default();
+        // A `kiosk.state` since the fetch began is newer than its reply.
+        let known = if shared.kiosk_seq == shared.profile_picker.kiosk_seq {
+            match fetched.kiosk {
+                Some(KioskRead::State(state)) => {
+                    shared.kiosk = state;
+                    true
+                }
+                Some(KioskRead::Unsupported) => true,
+                Some(KioskRead::Failed) | None => false,
+            }
+        } else {
+            true
+        };
+        let profiles = fetched.profiles.unwrap_or_default();
         if shared.core.profiles.is_none() {
             shared.core.profiles = Some(profiles.clone());
         }
+        // An unread launch policy may require a profile: no Shared row.
+        let require = fetched.require_for_launch.unwrap_or(true);
         let list = entries(&profiles);
-        let rule_kiosk = kiosk_of(&kiosk);
-        shared.kiosk = kiosk;
-        let kiosk = rule_kiosk;
+        let kiosk = kiosk_of(&shared.kiosk);
         let rows = rules::rows(&list, require, kiosk);
-        let shows = rules::shows(&rows, kiosk);
-        let index = rules::initial(&rows, &list, active);
+        // A lock that could not be read may hide rows: no picker.
+        let shows = known && rules::shows(&rows, kiosk);
+        let active = shared.active_profile.as_ref().map(|p| p.profile_id.clone());
+        let index = rules::initial(&rows, &list, active.as_deref());
         let model = &mut shared.profile_picker;
         if shows {
             model.rows = rows;
@@ -211,7 +257,45 @@ pub(crate) fn landed_for_test(
     active: Option<&str>,
     kiosk: KioskState,
 ) {
-    landed(ctx, app, ticket, Some(profiles), active, kiosk, false);
+    let active = active.map(|id| {
+        let name = profiles
+            .iter()
+            .find(|p| p.profile_id == id)
+            .map(|p| p.name.clone())
+            .unwrap_or_default();
+        ActiveProfile {
+            profile_id: id.to_string(),
+            name,
+            ..Default::default()
+        }
+    });
+    let fetched = Fetched {
+        profiles: Some(profiles),
+        active: Ok(active),
+        kiosk: Some(KioskRead::State(kiosk)),
+        require_for_launch: Some(false),
+    };
+    landed(ctx, app, ticket, fetched);
+}
+
+/// Core's answer to a `begin` fetch whose kiosk read failed (`kiosk:
+/// None`) or whose launch policy could not be read (`require: None`).
+#[cfg(all(test, feature = "mister"))]
+pub(crate) fn landed_partly_for_test(
+    ctx: &Ctx,
+    app: &App,
+    ticket: u64,
+    profiles: Vec<Profile>,
+    kiosk: Option<KioskState>,
+    require: Option<bool>,
+) {
+    let fetched = Fetched {
+        profiles: Some(profiles),
+        active: Ok(None),
+        kiosk: Some(kiosk.map_or(KioskRead::Failed, KioskRead::State)),
+        require_for_launch: require,
+    };
+    landed(ctx, app, ticket, fetched);
 }
 
 /// The kiosk lock changed: the open picker lists what the lock allows now.
@@ -231,7 +315,22 @@ pub(crate) fn kiosk_changed(ctx: &Ctx, app: &App) {
             .and_then(|row| model.rows.iter().position(|r| *r == row))
             .unwrap_or(0);
     }
+    // A lock that no longer allows switching ends the picker as it would
+    // have skipped it, unless a switch already asked for is answering.
+    let stop = {
+        let shared = lock(&ctx.shared);
+        !allowed(&shared) && !shared.profile_picker.busy
+    };
+    if stop && !crate::pin::is_open(app) {
+        carry_on(ctx, app);
+        return;
+    }
     render(ctx, app);
+}
+
+/// The kiosk lock still allows choosing a profile.
+fn allowed(shared: &Shared) -> bool {
+    rules::shows(&shared.profile_picker.rows, kiosk_of(&shared.kiosk))
 }
 
 /// Go on to the screen the start would have shown: the saved one where
@@ -382,9 +481,15 @@ enum Pick {
 }
 
 fn pick_focused(ctx: &Ctx, app: &App) {
+    if !allowed(&lock(&ctx.shared)) {
+        carry_on(ctx, app);
+        return;
+    }
     let pick = {
         let mut shared = lock(&ctx.shared);
         let active = shared.active_profile.as_ref().map(|p| p.profile_id.clone());
+        // `None` is the shared profile only once Core has said so.
+        let known = shared.active_profile_seq != 0;
         let model = &mut shared.profile_picker;
         let pick = match model.rows.get(model.index) {
             Some(Row::Profile(i)) => match model.profiles.get(*i) {
@@ -392,7 +497,7 @@ fn pick_focused(ctx: &Ctx, app: &App) {
                 Some(p) => Pick::Switch(p.clone()),
                 None => return,
             },
-            Some(Row::Shared) if active.is_none() => Pick::Stay,
+            Some(Row::Shared) if known && active.is_none() => Pick::Stay,
             Some(Row::Shared) => Pick::Leave,
             None => return,
         };
