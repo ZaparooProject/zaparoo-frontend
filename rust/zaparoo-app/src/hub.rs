@@ -181,9 +181,6 @@ pub struct Live<'a> {
     /// This build carries the Update screen.
     pub update_enabled: bool,
     pub internet_available: bool,
-    /// The frontend reads the same disk Core does, so a folder picked from
-    /// it is one Core can browse live (`MiSTer`).
-    pub pick_folders: bool,
 }
 
 /// What the caller knows about a pinned deck.
@@ -1032,12 +1029,11 @@ pub fn add_entries(
             })
         })
         .collect();
-    if live.pick_folders {
-        entries.push(AddEntry {
-            id: CUSTOM_FOLDER_ENTRY.to_string(),
-            label_key: "hub_add:folder".to_string(),
-        });
-    }
+    // Browsing Core's drives for a folder or one item in it.
+    entries.push(AddEntry {
+        id: CUSTOM_FOLDER_ENTRY.to_string(),
+        label_key: "hub_add:folder".to_string(),
+    });
     entries
 }
 
@@ -1237,7 +1233,6 @@ mod tests {
             resume_known_unavailable: false,
             update_enabled: true,
             internet_available: false,
-            pick_folders: false,
         }
     }
 
@@ -1509,7 +1504,7 @@ mod tests {
         let mut l = live(&confirmed);
         l.update_enabled = false;
         let out = add_entries(&available, &l, &Names);
-        assert_eq!(out.len(), 2);
+        assert_eq!(out.len(), 3, "with Browse… last");
         assert_eq!(
             (out[0].id.as_str(), out[0].label_key.as_str()),
             ("action:resume", "action:resume")
@@ -1535,7 +1530,7 @@ mod tests {
             ("setting".to_string(), "pageNope".to_string()),
         ];
         let out = add_entries(&available, &l, &Names);
-        assert_eq!(out.len(), 1);
+        assert_eq!(out.len(), 2, "with Browse… last");
         assert_eq!(
             (out[0].id.as_str(), out[0].label_key.as_str()),
             ("setting:pageMusic", "setting:pageMusic")
@@ -1552,28 +1547,29 @@ mod tests {
         let mut l = live(&confirmed);
         let out = add_entries(&available, &l, &Names);
         let ids: Vec<&str> = out.iter().map(|e| e.id.as_str()).collect();
-        assert_eq!(ids, ["category:Console"]);
+        assert_eq!(ids, ["category:Console", CUSTOM_FOLDER_ENTRY]);
 
         // Before Core answers, nothing is known to be missing.
         l.categories_loaded = false;
         let out = add_entries(&available, &l, &Names);
         let ids: Vec<&str> = out.iter().map(|e| e.id.as_str()).collect();
-        assert_eq!(ids, ["category:Other", "category:Console"]);
+        assert_eq!(
+            ids,
+            ["category:Other", "category:Console", CUSTOM_FOLDER_ENTRY]
+        );
     }
 
     #[test]
-    fn add_entries_end_with_the_folder_picker_where_folders_can_be_picked() {
+    fn add_entries_end_with_the_browser() {
         let confirmed = vec!["Console".to_string()];
         let available = vec![("category".to_string(), "Console".to_string())];
-        let mut l = live(&confirmed);
-        assert_eq!(add_entries(&available, &l, &Names).len(), 1);
-        l.pick_folders = true;
+        let l = live(&confirmed);
         let out = add_entries(&available, &l, &Names);
         assert_eq!(
             (out[1].id.as_str(), out[1].label_key.as_str()),
             (CUSTOM_FOLDER_ENTRY, "hub_add:folder")
         );
-        // Nothing else to add: the picker row still is.
+        // Nothing else to add: the browser row still is.
         let out = add_entries(&[], &l, &Names);
         assert_eq!(out.len(), 1);
     }
@@ -1638,7 +1634,6 @@ mod tests {
                 resume_known_unavailable: false,
                 update_enabled: false,
                 internet_available: true,
-                pick_folders: false,
             };
             let entry = resolve_category(&live, &resolver, layout_id);
             assert!(
@@ -1656,7 +1651,6 @@ mod tests {
             resume_known_unavailable: false,
             update_enabled: false,
             internet_available: true,
-            pick_folders: false,
         };
         assert!(resolve_category(&live, &resolver, "Arcade").disabled);
     }

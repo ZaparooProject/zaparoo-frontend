@@ -136,11 +136,15 @@ folders, then the files a launcher accepts; each file launches its own
 path. Go to, Tags and Search here are not offered there, since they need
 the media database.
 
-On MiSTer, **Add item… > Custom folder…** on the Hub writes one for you.
-It opens the file browser on the SD card listing folders only; the first
-row of every folder, **Add this folder**, pins the folder on screen. Inside
-a live folder, a subfolder's Options menu has Add to Hub for another live
-folder, and a file's has Add to Hub for a `zapscript` tile.
+**Add item… > Browse…** on the Hub writes one for you. It asks Zaparoo
+Core for its folders, so it reaches only what Core itself browses, and
+opens on the SD card when Core lists it (its other folders, such as USB
+drives, are the Places above it). Each folder lists its subfolders, then
+the files a launcher accepts. The first row of every folder, **Add this
+folder**, pins the folder on screen; picking a file pins a `zapscript`
+tile that launches it. Inside a live folder, a subfolder's Options menu
+has Add to Hub for another live folder, and a file's has Add to Hub for a
+`zapscript` tile.
 
 ```toml
 [[hub.items]]
@@ -150,7 +154,7 @@ live = true
 ```
 
 Live folders need a Zaparoo Core that supports live browsing. An older
-Core shows them empty.
+Core shows them empty, and Browse… shows an error.
 
 ### Renaming a tile and changing its icon
 
