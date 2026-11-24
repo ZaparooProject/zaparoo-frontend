@@ -14,6 +14,7 @@ use slint::ComponentHandle;
 use zaparoo_app::playtime::{self as rules, Grant, LimitReason, Notice, NoticeGate};
 use zaparoo_app::status_line::Event;
 use zaparoo_core::client::Notification;
+use zaparoo_core::media_types::is_primary_slot;
 use zaparoo_core::profile_types::{ExtendPlaytimeParams, PlaytimeStatus};
 
 use crate::router::{lock, Ctx};
@@ -52,6 +53,22 @@ pub fn classify(notification: &Notification) -> Option<Incoming> {
         }
         _ => None,
     }
+}
+
+/// A game starting (`Some(true)`) or stopping (`Some(false)`) in Core's
+/// primary slot.
+pub fn primary_edge(notification: &Notification) -> Option<bool> {
+    let running = match notification.method.as_str() {
+        "media.started" => true,
+        "media.stopped" => false,
+        _ => return None,
+    };
+    let slot = notification
+        .params
+        .get("slot")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    is_primary_slot(slot).then_some(running)
 }
 
 /// A playtime notification arrived. `game_running` is whether Core had a
@@ -270,5 +287,19 @@ mod tests {
             Some(Incoming::Extended(Grant::RestOfToday))
         );
         assert_eq!(classify(&n("playtime.limit.warning", json!({}))), None);
+    }
+
+    #[test]
+    fn primary_edges_skip_background_media() {
+        assert_eq!(primary_edge(&n("media.started", json!({}))), Some(true));
+        assert_eq!(
+            primary_edge(&n("media.stopped", json!({"slot": "primary"}))),
+            Some(false)
+        );
+        assert_eq!(
+            primary_edge(&n("media.started", json!({"slot": "background"}))),
+            None
+        );
+        assert_eq!(primary_edge(&n("media.indexing", json!({}))), None);
     }
 }

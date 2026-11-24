@@ -21,7 +21,7 @@
 
 use crate::client::{Client, ClientError, ConnectionState, Notification};
 use crate::media_types::{
-    ActiveMediaInfo, IndexingStatusResponse, MediaIndexParams, MediaScrapeParams,
+    is_primary_slot, ActiveMediaInfo, IndexingStatusResponse, MediaIndexParams, MediaScrapeParams,
     ScrapeSystemProgressResponse, ScrapingStatusResponse,
 };
 use std::sync::Arc;
@@ -477,10 +477,6 @@ fn same_media_identity(left: &ActiveMediaInfo, right: &ActiveMediaInfo) -> bool 
         && left.system_id == right.system_id
         && left.media_path == right.media_path
         && left.media_name == right.media_name
-}
-
-fn is_primary_slot(slot: &str) -> bool {
-    slot.is_empty() || slot.eq_ignore_ascii_case("primary")
 }
 
 #[cfg(test)]

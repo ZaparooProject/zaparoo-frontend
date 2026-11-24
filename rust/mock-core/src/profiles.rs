@@ -320,11 +320,20 @@ fn clients_delete(params: &Value) -> Result<Value, String> {
     })
 }
 
+/// Whether limits apply: the active profile's own switch, else the
+/// global one.
+fn limits_on(s: &State) -> bool {
+    s.active
+        .as_ref()
+        .and_then(|id| s.profiles.iter().find(|p| &p.id == id))
+        .and_then(|p| p.limits_enabled)
+        .unwrap_or_else(|| s.limits["enabled"].as_bool().unwrap_or(false))
+}
+
 /// `playtime`: a session in progress with fixed time left while limits
 /// are on, plus whatever extra time was granted.
 fn playtime_json(s: &mut State) -> Value {
-    let enabled = s.limits["enabled"].as_bool().unwrap_or(false);
-    if !enabled {
+    if !limits_on(s) {
         return json!({"state": "reset", "sessionActive": false, "limitsEnabled": false});
     }
     let mut out = json!({
@@ -353,7 +362,7 @@ fn extend(params: &Value, notifier: &Notifier) -> Result<Value, String> {
         .and_then(|d| d.strip_suffix('m'))
         .and_then(|m| m.parse::<u32>().ok());
     let event = with(|s| {
-        if !s.limits["enabled"].as_bool().unwrap_or(false) {
+        if !limits_on(s) {
             return Err("playtime limits are disabled".to_string());
         }
         match (mode.as_str(), minutes) {
