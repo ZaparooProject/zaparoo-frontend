@@ -12,6 +12,8 @@
 
 use std::time::{Duration, Instant};
 
+use crate::playtime::{Grant, LimitReason};
+
 /// Core link state, mirroring `zaparoo_core::client::ConnectionState`
 /// without the payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -70,6 +72,10 @@ impl TaskInput {
 pub enum Event {
     TokenScanned(String),
     PlaytimeWarning(String),
+    /// Core stopped the game at a playtime limit.
+    PlaytimeReached(LimitReason),
+    /// Someone granted extra time.
+    PlaytimeExtended(Grant),
     InboxMessage(String),
     /// A token a reader read could not run. Core's message is English and
     /// not shown; the category picks a translated line.
@@ -165,6 +171,12 @@ pub enum Kind {
     Imported,
     /// `arg` carries the remaining time text.
     PlaytimeWarning,
+    PlaytimeSessionReached,
+    PlaytimeDailyReached,
+    /// `arg` and `arg2` carry the hours and minutes granted.
+    PlaytimeExtended,
+    /// No session limit until midnight.
+    PlaytimeWaived,
     /// `arg` carries the inbox title.
     Inbox,
     /// Core is busy on something it asked every client to show; `arg`
@@ -203,6 +215,10 @@ impl Kind {
             Self::ImportFailed => "import-failed",
             Self::Imported => "imported",
             Self::PlaytimeWarning => "playtime-warning",
+            Self::PlaytimeSessionReached => "playtime-session-reached",
+            Self::PlaytimeDailyReached => "playtime-daily-reached",
+            Self::PlaytimeExtended => "playtime-extended",
+            Self::PlaytimeWaived => "playtime-waived",
             Self::Inbox => "inbox",
             Self::CoreLoader => "core-loader",
             Self::CoreNotice => "core-notice",
@@ -401,7 +417,16 @@ impl Ladder {
             Event::ProfileDataFailed => {
                 Some((Message::new(Kind::ProfileDataFailed), self.failure_dwell))
             }
-            Event::PlaytimeWarning(_) | Event::InboxMessage(_) => None,
+            // The game just stopped: said over a task, and held as long
+            // as a failed scan.
+            Event::PlaytimeReached(reason) => Some((
+                Message::new(match reason {
+                    LimitReason::Session => Kind::PlaytimeSessionReached,
+                    LimitReason::Daily => Kind::PlaytimeDailyReached,
+                }),
+                self.failure_dwell,
+            )),
+            Event::PlaytimeWarning(_) | Event::PlaytimeExtended(_) | Event::InboxMessage(_) => None,
         };
         if let Some((message, dwell)) = scan {
             // A failure replaces the read cue; a read never hides a
@@ -421,8 +446,20 @@ impl Ladder {
             return;
         }
         let message = match event {
-            Event::TokenScanned(_) | Event::RunFailed(_) | Event::ProfileDataFailed => {
+            Event::TokenScanned(_)
+            | Event::RunFailed(_)
+            | Event::ProfileDataFailed
+            | Event::PlaytimeReached(_) => {
                 return;
+            }
+            Event::PlaytimeExtended(Grant::RestOfToday) => Message::new(Kind::PlaytimeWaived),
+            Event::PlaytimeExtended(Grant::Time(time)) => {
+                let (hours, minutes) = time.parts();
+                Message {
+                    kind: Kind::PlaytimeExtended,
+                    arg: hours.to_string(),
+                    arg2: minutes.to_string(),
+                }
             }
             Event::PlaytimeWarning(remaining) => {
                 Message::with_arg(Kind::PlaytimeWarning, remaining.clone())
@@ -997,6 +1034,55 @@ mod tests {
                 .message
                 .kind,
             Kind::Inbox
+        );
+    }
+    #[test]
+    fn playtime_notices_take_their_slots() {
+        let mut ladder = Ladder::new()
+            .with_dwells(Duration::from_secs(6), Duration::from_secs(5))
+            .with_scan_dwells(Duration::from_secs(2), Duration::from_secs(10));
+        ladder.enable_media_activity(&TaskInput::default());
+        let t0 = Instant::now();
+        let busy = TaskInput {
+            indexing: true,
+            ..TaskInput::default()
+        };
+        let idle = TaskInput::default();
+
+        // A stopped game is said over a task, and held like a failed scan.
+        ladder.observe_event(
+            &connected(),
+            &busy,
+            &Event::PlaytimeReached(LimitReason::Daily),
+            t0,
+        );
+        let out = ladder.render(&connected(), &busy, t0 + Duration::from_secs(9));
+        assert_eq!(out.message.kind, Kind::PlaytimeDailyReached);
+        assert!(out.is_error);
+
+        let mut ladder = Ladder::new().with_dwells(Duration::from_secs(6), Duration::from_secs(5));
+        ladder.enable_media_activity(&idle);
+        ladder.observe_event(
+            &connected(),
+            &idle,
+            &Event::PlaytimeExtended(Grant::Time(crate::top_played::PlayTime::Hours(1, 30))),
+            t0,
+        );
+        let out = ladder.render(&connected(), &idle, t0);
+        assert_eq!(out.message.kind, Kind::PlaytimeExtended);
+        assert_eq!(
+            (out.message.arg.as_str(), out.message.arg2.as_str()),
+            ("1", "30")
+        );
+        ladder.observe_event(
+            &connected(),
+            &idle,
+            &Event::PlaytimeExtended(Grant::RestOfToday),
+            t0,
+        );
+        assert_eq!(
+            ladder.render(&connected(), &idle, t0).message.kind,
+            Kind::PlaytimeWaived
         );
     }
 }

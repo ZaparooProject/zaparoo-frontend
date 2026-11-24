@@ -230,6 +230,8 @@ pub struct Shared {
     pub controllers: crate::controllers::Model,
     /// Core's settings, readers, profiles and mappings the Settings pages show.
     pub core: crate::core_settings::Model,
+    /// Playtime left, its notices and our own extra time grants.
+    pub playtime: crate::playtime::Model,
 }
 
 /// Which surface an open context menu was invoked on. Favorites and
@@ -440,6 +442,7 @@ impl Shared {
             settings_from_hub: None,
             controllers: crate::controllers::Model::default(),
             core: crate::core_settings::Model::default(),
+            playtime: crate::playtime::Model::default(),
         }
     }
 }
@@ -2505,6 +2508,8 @@ pub(crate) fn store_active_profile(
     };
     app.global::<crate::Shell>()
         .set_profile_name(SharedString::from(name.as_str()));
+    // Limits follow the profile; this also runs on every connect.
+    crate::playtime::refresh(ctx, app);
     if changed {
         // Core recommends for the active profile only.
         ctx.store.invalidate(&zaparoo_core::store::Tag::any(

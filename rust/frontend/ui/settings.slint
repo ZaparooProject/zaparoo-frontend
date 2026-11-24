@@ -177,6 +177,7 @@ export global SettingsLabels {
             return @tr("Set a PIN first to make this profile an admin.");
         }
         if (row.id == "profileClearPin" && !row.enabled) { return @tr("Admin profiles need a PIN."); }
+        if (row.id == "playtimeExtraTime" && !row.enabled) { return @tr("Available once a game is played under a limit."); }
         if (row.id == "foundDevice" || row.id == "pairedDevice") { return self.device-description(row.id, row.device, row.pair-error); }
         if (row.id == "pairDevice" && row.value-name != "") {
             return @tr("Shows a PIN to pair an app. This device appears as {}.", row.value-name);
@@ -430,6 +431,7 @@ export global SettingsLabels {
         if (id == "playtimeEnabled") { return @tr("Playtime limits"); }
         if (id == "playtimeDaily") { return @tr("Daily limit"); }
         if (id == "playtimeSession") { return @tr("Session limit"); }
+        if (id == "playtimeExtraTime") { return @tr("Extra time"); }
         if (id == "profilesRequireForLaunch") { return @tr("Require a profile before launching"); }
         // Preferred game versions.
         if (id == "preferences") { return @tr("Preferences"); }
@@ -601,6 +603,7 @@ export global SettingsLabels {
         if (id == "deleteProfile") { return @tr("Deletes the profile and its playtime."); }
         if (id == "pagePlaytimeLimits") { return @tr("How long games can be played each day and in one sitting."); }
         if (id == "playtimeEnabled") { return @tr("Stops play when a limit is reached."); }
+        if (id == "playtimeExtraTime") { return @tr("Adds time to the current session without changing the limits."); }
         if (id == "profilesRequireForLaunch") { return @tr("Games only start after someone picks a profile."); }
         return "";
     }
@@ -831,6 +834,12 @@ export global SettingsLabels {
             return @tr("Same as everyone");
         }
         if (id == "profileDailyLimit" || id == "profileSessionLimit" || id == "playtimeDaily" || id == "playtimeSession") {
+            return SettingsLabels.minutes(value);
+        }
+        if (id == "playtimeExtraTime") {
+            if (value == "none") { return @tr("None"); }
+            if (value == "today") { return @tr("Rest of today"); }
+            if (value == "15") { return @tr("15 minutes"); }
             return SettingsLabels.minutes(value);
         }
         if (id == "profilePin") {

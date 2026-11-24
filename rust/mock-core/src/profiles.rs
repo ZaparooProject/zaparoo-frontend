@@ -30,6 +30,10 @@ struct State {
     active: Option<String>,
     clients: Vec<Value>,
     limits: Value,
+    /// Extra time granted to the session, in minutes.
+    extension: u32,
+    /// The session limit is waived for the rest of the day.
+    waived: bool,
 }
 
 static STATE: Mutex<Option<State>> = Mutex::new(None);
@@ -97,6 +101,8 @@ fn seed() -> State {
             json!({"clientId": "c2", "clientName": "Living room tablet", "role": "member", "createdAt": 1_776_000_000, "lastSeenAt": 1_776_500_000}),
         ],
         limits: json!({"enabled": false, "daily": "3h", "session": "1h", "sessionReset": "20m", "warnings": ["5m", "1m"]}),
+        extension: 0,
+        waived: false,
     }
 }
 
@@ -116,6 +122,8 @@ pub fn route(method: &str, params: &Value, notifier: &Notifier) -> Option<Result
         "clients" => Some(Ok(with(|s| json!({"clients": s.clients})))),
         "clients.delete" => Some(clients_delete(params)),
         "settings.playtime.limits" => Some(Ok(with(|s| s.limits.clone()))),
+        "playtime" => Some(Ok(with(playtime_json))),
+        "playtime.extend" => Some(extend(params, notifier)),
         "settings.playtime.limits.update" => Some(Ok(with(|s| {
             if let (Some(limits), Some(update)) = (s.limits.as_object_mut(), params.as_object()) {
                 for (k, v) in update {
@@ -310,6 +318,64 @@ fn clients_delete(params: &Value) -> Result<Value, String> {
         }
         Ok(Value::Null)
     })
+}
+
+/// `playtime`: a session in progress with fixed time left while limits
+/// are on, plus whatever extra time was granted.
+fn playtime_json(s: &mut State) -> Value {
+    let enabled = s.limits["enabled"].as_bool().unwrap_or(false);
+    if !enabled {
+        return json!({"state": "reset", "sessionActive": false, "limitsEnabled": false});
+    }
+    let mut out = json!({
+        "state": "active",
+        "sessionActive": false,
+        "limitsEnabled": true,
+        "dailyRemaining": "2h10m0s",
+    });
+    if s.waived {
+        out["sessionExtendedUntil"] = json!("2026-04-30T00:00:00Z");
+    } else {
+        out["sessionRemaining"] = json!(format!("{}m30s", 41 + s.extension));
+    }
+    if s.extension > 0 {
+        out["sessionExtension"] = json!(format!("{}m0s", s.extension));
+    }
+    out
+}
+
+/// `playtime.extend`: adds minutes or waives the session limit for the
+/// day, refused while limits are off, and announced to every client.
+fn extend(params: &Value, notifier: &Notifier) -> Result<Value, String> {
+    let mode = params["mode"].as_str().unwrap_or_default().to_string();
+    let minutes = params["duration"]
+        .as_str()
+        .and_then(|d| d.strip_suffix('m'))
+        .and_then(|m| m.parse::<u32>().ok());
+    let event = with(|s| {
+        if !s.limits["enabled"].as_bool().unwrap_or(false) {
+            return Err("playtime limits are disabled".to_string());
+        }
+        match (mode.as_str(), minutes) {
+            ("today", _) => {
+                s.waived = true;
+                Ok(json!({"mode": "today", "expires": "2026-04-30T00:00:00Z"}))
+            }
+            ("duration", Some(minutes)) => {
+                s.extension += minutes;
+                Ok(json!({
+                    "mode": "duration",
+                    "duration": format!("{minutes}m0s"),
+                    "sessionExtension": format!("{}m0s", s.extension),
+                }))
+            }
+            _ => Err(format!("invalid mode or duration: {mode}")),
+        }
+    })?;
+    notifier.send("playtime.extended", &event);
+    let mut reply = event;
+    reply["replayed"] = json!(false);
+    Ok(reply)
 }
 
 #[cfg(test)]

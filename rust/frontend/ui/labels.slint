@@ -592,6 +592,7 @@ export global DialogLabels {
         if (kind == ErrorKind.card-write) { return @tr("Token write failed"); }
         if (kind == ErrorKind.image-picker) { return @tr("Image picker failed"); }
         if (kind == ErrorKind.setting) { return @tr("Setting not saved"); }
+        if (kind == ErrorKind.playtime-extend) { return @tr("Extra time not added"); }
         if (kind == ErrorKind.mapping) {
             return context == "delete" ? @tr("Mapping not removed") : @tr("Mapping not saved");
         }
@@ -652,6 +653,7 @@ export global DialogLabels {
         if (kind == ErrorKind.card-write) { return @tr("Could not write to this token. Check that it is writable and try again."); }
         if (kind == ErrorKind.image-picker) { return @tr("Could not open an image picker, or the image chosen could not be read."); }
         if (kind == ErrorKind.setting) { return @tr("Could not save this setting. Try again."); }
+        if (kind == ErrorKind.playtime-extend) { return @tr("Could not add extra time. Try again."); }
         // `context` is "delete" for a removal, empty for a save.
         if (kind == ErrorKind.mapping) {
             if (context == "delete") { return @tr("Could not remove this mapping. Check Zaparoo Core and try again."); }

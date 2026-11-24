@@ -11,6 +11,7 @@
 
 import { Theme, Sizing, Motion, Layout, Backdrop } from "theme.slint";
 import { ContentState, StatusKind, HeaderPad, PadFill, HeaderLogo } from "state_types.slint";
+import { Labels } from "labels.slint";
 
 // Glyph provider implemented in Rust: the SVG sources under
 // resources/images are rasterized with resvg at the exact requested
@@ -164,6 +165,12 @@ export global Status {
         if (self.kind == StatusKind.import-failed) { return @tr("Import failed: {}", self.arg); }
         if (self.kind == StatusKind.imported) { return @tr("Imported {} of {}", self.arg, self.arg2); }
         if (self.kind == StatusKind.playtime-warning) { return @tr("Playtime limit in {}", self.arg); }
+        if (self.kind == StatusKind.playtime-session-reached) { return @tr("Session limit reached"); }
+        if (self.kind == StatusKind.playtime-daily-reached) { return @tr("Daily limit reached"); }
+        if (self.kind == StatusKind.playtime-extended) {
+            return @tr("{} extra time added", Labels.play-time(self.arg.to-float(), self.arg2.to-float()));
+        }
+        if (self.kind == StatusKind.playtime-waived) { return @tr("No session limit until midnight"); }
         if (self.kind == StatusKind.inbox) { return self.arg; }
         // Core's own words, as it sent them.
         if (self.kind == StatusKind.core-loader) { return self.arg == "" ? @tr("Loading…") : self.arg; }
@@ -356,6 +363,11 @@ export component HeaderBar inherits Rectangle {
     // Core's active profile: its name leads the HUD, or a profile glyph
     // where the compact header has no room for a name.
     in property <string> profile-name: "";
+    // Playtime left before a limit stops play, in hours and minutes
+    // (`playtime-minutes` -1 shows nothing), between the profile and the
+    // status icons.
+    in property <int> playtime-hours: 0;
+    in property <int> playtime-minutes: -1;
     in property <string> browse-title: "";
     in property <string> app-text: "";
 
@@ -441,13 +453,45 @@ export component HeaderBar inherits Rectangle {
     property <length> profile-width: !root.profile-visible ? 0px
         : (root.profile-compact ? root.icon-size : root.profile-name-width) + root.hud-spacing;
 
+    property <bool> playtime-visible: root.status-icons-enabled && root.playtime-minutes >= 0;
+    // The compact header has room for the reading alone.
+    property <bool> playtime-glyph: !root.compact-pads;
+    property <string> playtime-text: Labels.play-time(root.playtime-hours, root.playtime-minutes);
+    property <length> playtime-gap: root.hud-spacing / 2;
+    property <length> playtime-text-width: Math.ceil(playtime-measure.preferred-width / 1px) * 1px;
+    property <length> playtime-width: !root.playtime-visible ? 0px
+        : (root.playtime-glyph ? root.icon-size + root.playtime-gap : 0px) + root.playtime-text-width + root.hud-spacing;
+    property <length> playtime-x: root.hud-x - root.playtime-width;
+
+    playtime-measure := Text {
+        visible: false;
+        text: root.playtime-text;
+        font-size: Sizing.font-caption;
+    }
+    if root.playtime-visible && root.playtime-glyph: Image {
+        x: root.playtime-x;
+        y: root.hud-y + Sizing.snap((Sizing.header-row-height - self.height) / 2);
+        width: root.icon-size;
+        height: root.icon-size;
+        source: GlyphSource.glyph("icons/Clock", root.icon-size, Theme.text-primary);
+        image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
+    }
+    if root.playtime-visible: Text {
+        x: Sizing.snap(root.playtime-x + (root.playtime-glyph ? root.icon-size + root.playtime-gap : 0px));
+        y: Sizing.snap(root.hud-y + (Sizing.header-row-height - self.preferred-height) / 2);
+        width: root.playtime-text-width;
+        text: root.playtime-text;
+        color: Theme.text-primary;
+        font-size: Sizing.font-caption;
+    }
+
     profile-measure := Text {
         visible: false;
         text: root.profile-name;
         font-size: Sizing.font-caption;
     }
     if root.profile-visible && root.profile-compact: Image {
-        x: root.hud-x - root.profile-width;
+        x: root.playtime-x - root.profile-width;
         y: root.hud-y + Sizing.snap((Sizing.header-row-height - self.height) / 2);
         width: root.icon-size;
         height: root.icon-size;
@@ -455,7 +499,7 @@ export component HeaderBar inherits Rectangle {
         image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
     }
     if root.profile-visible && !root.profile-compact: Text {
-        x: root.hud-x - root.profile-width;
+        x: root.playtime-x - root.profile-width;
         y: root.hud-y + (Sizing.header-row-height - self.preferred-height) / 2;
         width: root.profile-name-width;
         text: root.profile-name;
@@ -568,7 +612,7 @@ export component HeaderBar inherits Rectangle {
     // logo and the HUD and kept clear of the wider of the two; never less
     // than a third of the header.
     property <length> title-side: Sizing.header-side-margin + Math.max(root.logo-right,
-        Layout.hud-bottom-aligned ? root.hud-width + root.profile-width : 0px) + Sizing.pct-w(1.5);
+        Layout.hud-bottom-aligned ? root.hud-width + root.playtime-width + root.profile-width : 0px) + Sizing.pct-w(1.5);
     if Layout.title-in-header && root.browse-title != "": Text {
         property <length> natural: Math.ceil(title-measure.preferred-width / 1px) * 1px;
         property <length> room: parent.width - 2 * root.title-side;
