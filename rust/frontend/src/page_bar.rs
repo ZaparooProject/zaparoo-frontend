@@ -189,6 +189,7 @@ fn entry(chip: Chip, surface: Surface, shared: &Shared) -> crate::MenuEntry {
         | Chip::SearchHere
         | Chip::EditSearch
         | Chip::RandomFavorite
+        | Chip::Search
         | Chip::AddItem
         | Chip::More
         | Chip::NewDeck
@@ -387,7 +388,7 @@ fn activate(ctx: &Ctx, app: &App, index: usize) {
             app.global::<PageBar>().set_focused(true);
             return;
         }
-        "hub_add" => crate::hub::page_menu_accept(ctx, app, &id),
+        "hub_search" | "hub_add" => crate::hub::page_menu_accept(ctx, app, &id),
         "new_deck" => crate::decks::new_deck(ctx, app),
         "play_deck" => crate::decks::play_open(ctx, app),
         "more" if surface == Surface::Deck => crate::decks::open_more(ctx, app),

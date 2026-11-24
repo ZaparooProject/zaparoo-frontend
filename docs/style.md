@@ -1173,7 +1173,7 @@ once, through the same relayout a scene change runs.
 
 | Screen | Chips | More |
 |---|---|---|
-| Hub | Add item | Reset layout, Settings, Quit |
+| Hub | Search, Add item | Reset layout, Settings, Quit |
 | Games | Go to, Tags [value], Search here | |
 | Systems | Search here | |
 | Favorites | Sort [value], Group by [value], Random game, Search here | Back to Hub |

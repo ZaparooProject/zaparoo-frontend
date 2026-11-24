@@ -4390,6 +4390,7 @@ fn fixture_chips(app: &App, mode: GamesMode) {
     let bar = app.global::<generated::PageBar>();
     bar.set_games_chips(slint::ModelRc::new(slint::VecModel::from(games)));
     bar.set_hub_chips(slint::ModelRc::new(slint::VecModel::from(vec![
+        chip("hub_search", "hub_search", ""),
         chip("hub_add", "hub_add", ""),
         chip("more", "more", ""),
     ])));

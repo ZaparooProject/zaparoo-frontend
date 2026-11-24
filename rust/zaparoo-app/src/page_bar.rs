@@ -61,6 +61,9 @@ pub enum Chip {
     EditSearch,
     /// Pin the search on screen to the Hub, or take it off.
     AddToHub,
+    /// The Search screen, searching everything. The Hub's own way in
+    /// from any page, wherever the Search tile sits.
+    Search,
     /// The Hub's Add item picker.
     AddItem,
     /// The rare actions, as the Menu list titled "More".
@@ -96,6 +99,7 @@ impl Chip {
             Self::RandomFavorite => "launch_random_favorite",
             Self::EditSearch => "edit_search",
             Self::AddToHub => "add_to_hub",
+            Self::Search => "hub_search",
             Self::AddItem => "hub_add",
             Self::More => "more",
             Self::NewDeck => "new_deck",
@@ -114,7 +118,7 @@ impl Chip {
 /// last and only where there is something rare to put in it.
 pub fn chips(surface: Surface) -> &'static [Chip] {
     match surface {
-        Surface::Hub => &[Chip::AddItem, Chip::More],
+        Surface::Hub => &[Chip::Search, Chip::AddItem, Chip::More],
         Surface::Games => &[Chip::GoTo, Chip::Filter, Chip::SearchHere],
         Surface::Systems => &[Chip::SearchHere],
         Surface::Favorites => &[
@@ -268,6 +272,11 @@ mod tests {
     fn go_to_leads_the_games_row_and_quit_sits_behind_more() {
         assert_eq!(chips(Surface::Games).first(), Some(&Chip::GoTo));
         assert_eq!(more_rows(Surface::Hub).last(), Some(&"hub_quit"));
+    }
+
+    #[test]
+    fn search_leads_the_hub_row() {
+        assert_eq!(chips(Surface::Hub).first(), Some(&Chip::Search));
     }
 
     #[test]

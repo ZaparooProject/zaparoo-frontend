@@ -354,6 +354,7 @@ export global Labels {
         if (key == "filter:none") { return @tr("No tags available"); }
         if (Labels.filter-category(key, name) != "") { return Labels.filter-category(key, name); }
         // Hub rows and its Menu.
+        if (key == "hub_search") { return @tr("Search…"); }
         if (key == "hub_add") { return @tr("Add item…"); }
         // The Add item row that picks a folder from disk.
         if (key == "hub_add:folder") { return @tr("Custom folder…"); }

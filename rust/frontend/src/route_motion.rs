@@ -11972,11 +11972,14 @@ fn the_hubs_more_chip_holds_quit_and_backing_out_returns_to_it() {
     crate::sizing::apply_scene(&app, crate::sizing::Scene::of(&app, 1280.0, 720.0, false));
     settle(&window);
     assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Hub);
-    assert_eq!(crate::page_bar::chip_ids(&app), ["hub_add", "more"]);
+    assert_eq!(
+        crate::page_bar::chip_ids(&app),
+        ["hub_search", "hub_add", "more"]
+    );
     let bar = app.global::<crate::PageBar>();
     let overlays = app.global::<crate::Overlays>();
     crate::router::handle_action(&ctx, &app, "page_menu");
-    crate::router::handle_action(&ctx, &app, "right");
+    crate::router::handle_action(&ctx, &app, "left");
     crate::router::handle_action(&ctx, &app, "accept");
     assert!(overlays.get_list_open());
     assert_eq!(overlays.get_list_title(), "title:more");
@@ -11989,7 +11992,7 @@ fn the_hubs_more_chip_holds_quit_and_backing_out_returns_to_it() {
     crate::router::handle_action(&ctx, &app, "cancel");
     assert!(!overlays.get_list_open());
     assert!(bar.get_focused());
-    assert_eq!(bar.get_index(), 1);
+    assert_eq!(bar.get_index(), 2);
     // Quit still asks first.
     crate::router::handle_action(&ctx, &app, "accept");
     crate::router::handle_action(&ctx, &app, "up");
@@ -11997,6 +12000,28 @@ fn the_hubs_more_chip_holds_quit_and_backing_out_returns_to_it() {
     advance(zaparoo_app::input::PRESS_FEEDBACK_MS + 10);
     assert!(overlays.get_dialog_open());
     assert_eq!(overlays.get_dialog_kind(), DialogKind::QuitConfirm);
+}
+
+#[test]
+fn menu_then_accept_on_the_hub_opens_search_and_back_returns() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    seed_hub_tiles(&ctx, &app);
+    crate::sizing::apply_scene(&app, crate::sizing::Scene::of(&app, 1280.0, 720.0, false));
+    settle(&window);
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    crate::router::lock(&ctx.shared).persist.search.query = "stale".into();
+    crate::router::handle_action(&ctx, &app, "page_menu");
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert_eq!(shell.get_active_screen(), Screen::Search);
+    // A fresh search, as the Search tile opens it.
+    assert_eq!(app.global::<crate::SearchView>().get_before(), "");
+    crate::router::handle_action(&ctx, &app, "cancel");
+    settle(&window);
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
 }
 
 #[test]
