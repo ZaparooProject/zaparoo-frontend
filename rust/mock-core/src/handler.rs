@@ -591,6 +591,20 @@ mod tests {
     }
 
     #[test]
+    fn a_live_browse_without_a_path_lists_the_roots() {
+        let req = r#"{"jsonrpc":"2.0","id":"1","method":"media.browse","params":{"live":true}}"#;
+        let resp = parse(&dispatch(req));
+        let entries = resp["result"]["entries"].as_array().expect("array");
+        let paths: Vec<&str> = entries
+            .iter()
+            .map(|entry| entry["path"].as_str().expect("a path"))
+            .collect();
+        assert_eq!(paths, ["/media/fat", "/media/usb0"]);
+        assert!(entries.iter().all(|entry| entry["type"] == "root"));
+        assert_eq!(entries[0]["name"], "fat");
+    }
+
+    #[test]
     fn media_browse_filters_and_pages_favorites() {
         let first = parse(&dispatch(
             r#"{"jsonrpc":"2.0","id":"1","method":"media.browse","params":{"path":"/games","maxResults":2,"tags":["user:favorite"]}}"#,

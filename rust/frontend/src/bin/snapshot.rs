@@ -2169,8 +2169,8 @@ fn fixture_file_browser(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen
     use zaparoo_app::layouts::{self, Body, ThemeId, View};
     let view = app.global::<FileBrowserView>();
     let places = screen.contains("places");
-    // The Custom folder… picker: folders only, under the row that picks
-    // the folder on screen.
+    // The Hub's Browse… picker: Core's folders, then its launchable files,
+    // under the row that picks the folder on screen.
     let pick = screen.contains("folders");
     let list = screen.contains("list") || pick;
     let pick_label = app
@@ -2184,6 +2184,8 @@ fn fixture_file_browser(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen
             ("_Computer", ""),
             ("_RA_Cores", ""),
             ("_Utility", ""),
+            ("menu", ""),
+            ("Super Metroid", ""),
         ]
     } else if places {
         vec![
@@ -2204,7 +2206,13 @@ fn fixture_file_browser(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen
             ("settings.webp", ""),
         ]
     };
-    let folders = if places || pick { names.len() } else { 2 };
+    let folders = if places {
+        names.len()
+    } else if pick {
+        5
+    } else {
+        2
+    };
     let cell = |i: usize, (name, path): (&str, &str)| GridCell {
         name: if list && !places && i < folders && !(pick && i == 0) {
             format!("{name}/").into()
@@ -3443,7 +3451,6 @@ fn fixture_hub(app: &App, scene_w: f64, scene_h: f64, crt: bool, selected: usize
         resume_known_unavailable: false,
         update_enabled: false,
         internet_available: true,
-        pick_folders: false,
     };
     let inputs = sizing::Scene::of(app, scene_w, scene_h, crt).inputs();
     let derived = zaparoo_app::sizing::derive(&inputs);

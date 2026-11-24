@@ -1035,7 +1035,9 @@ cold start restores it only while that tile is still where it was.
 ## File browser
 
 One reusable browser over the frontend's own disk (`ui/file_browser.slint`,
-`frontend::file_browser`, rules in `zaparoo_app::file_browser`). A caller
+`frontend::file_browser`, rules in `zaparoo_app::file_browser`), except for
+the Hub's Browse…, which lists Core's folders and launchable files through
+`media.browse` `live` with Core's browse roots as its Places. A caller
 opens it with a purpose, which decides what a pick does; the browser only
 walks folders. It is a screen, because folders are more than one page of a
 panel (see "Modal depth").
@@ -1053,7 +1055,7 @@ panel (see "Modal depth").
   one), held page flips stopping at the ends, and the debounced selection
   write.
 - **Places** sit above every folder: the custom folder, then the drives
-  the machine has. Back goes up a folder, from a drive's top to Places,
+  the machine has (Core's browse roots for Browse…). Back goes up a folder, from a drive's top to Places,
   and from Places back to where the browser was opened.
 - **Folder reads** run off the event loop under a ticket. The folder on
   screen stays, taking only Back, until the next one is ready, and the
