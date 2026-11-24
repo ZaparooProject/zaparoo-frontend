@@ -5,7 +5,7 @@
 //! The file browser's rules: what a folder lists and in what order, the
 //! starting points above every folder (Places), where a browse starts, and
 //! where Back goes. Paths are plain `/`-separated strings; the adapter
-//! reads the disk and hands the names in.
+//! reads the disk, or asks Core for the folder mode, and hands the names in.
 
 use crate::customization;
 
@@ -13,8 +13,8 @@ use crate::customization;
 /// how many were left out, so a huge directory cannot exhaust memory.
 pub const LIST_CAP: usize = 2000;
 
-/// Where a folder pick for a live folder tile starts: the `MiSTer` SD card,
-/// home of the main menu's own folders.
+/// Where the Hub's Browse… starts when Core lists it as a root: the
+/// `MiSTer` SD card, home of the main menu's own folders.
 pub const FOLDER_START: &str = "/media/fat";
 
 /// What the browser offers to pick.
@@ -25,8 +25,8 @@ pub enum Mode {
     Plain,
     /// Folders and image files, as a grid of previews.
     Images,
-    /// Folders only, as a list, each with a row that picks the folder
-    /// itself.
+    /// Core's folders and launchable files, as a list, each folder with a
+    /// row that picks the folder itself. Core lists it, not the disk.
     Folders,
     /// Folders and image files as previews, each folder with a row that
     /// picks the folder itself: a background image, or a folder of them.
@@ -94,19 +94,18 @@ pub struct Listing {
     pub omitted: usize,
 }
 
-/// Hidden names are left out, the image mode keeps only folders and the
-/// image types the artwork loader accepts, and the folder mode only folders. Folders come first, then
+/// Hidden names are left out, and the image modes keep only folders and
+/// the image types the artwork loader accepts. Folders come first, then
 /// files, each A to Z whatever the case.
 pub fn listing(raw: Vec<RawEntry>, mode: Mode, cap: usize) -> Listing {
     let mut entries: Vec<Entry> = raw
         .into_iter()
         .filter(|entry| !entry.name.starts_with('.') && !entry.name.is_empty())
         .filter(|entry| match mode {
-            Mode::Plain => true,
+            Mode::Plain | Mode::Folders => true,
             Mode::Images | Mode::ImageOrFolder => {
                 entry.is_dir || customization::is_image_file(&entry.name)
             }
-            Mode::Folders => entry.is_dir,
         })
         .map(|entry| Entry {
             kind: if entry.is_dir {
@@ -250,18 +249,24 @@ pub fn places(
     out
 }
 
-/// The Places a folder picked for Core can sit under: the drives Core
-/// browses, not the custom folder or the root of the system.
-pub fn core_places(places: Vec<Place>) -> Vec<Place> {
-    places
-        .into_iter()
-        .filter(|place| {
-            matches!(
-                place.kind,
-                PlaceKind::SdCard | PlaceKind::Usb(_) | PlaceKind::Network
-            )
-        })
-        .collect()
+/// The Place for one of Core's browse roots, worded as the disk Places
+/// word the same folder: the `MiSTer` SD card, a USB drive by its number,
+/// the network share. Any other root is a drive by Core's name for it.
+pub fn core_place(path: &str, name: &str) -> Place {
+    let path = trim_dir(path);
+    let kind = match path.as_str() {
+        "/media/fat" => PlaceKind::SdCard,
+        "/media/network" | "/media/fat/cifs" => PlaceKind::Network,
+        other => match other
+            .strip_prefix("/media/usb")
+            .and_then(|n| n.parse::<u8>().ok())
+        {
+            Some(n) => PlaceKind::Usb(n),
+            None if name.is_empty() => PlaceKind::Drive(base_name(&path).to_string()),
+            None => PlaceKind::Drive(name.to_string()),
+        },
+    };
+    Place { kind, path }
 }
 
 /// Where a browse starts: the folder of the current icon when it is a
@@ -368,37 +373,23 @@ mod tests {
     }
 
     #[test]
-    fn the_folder_mode_lists_folders_only_and_round_trips() {
-        let out = listing(
-            vec![
-                raw("a.mgl", false),
-                raw("_Arcade", true),
-                raw("b.rbf", false),
-            ],
-            Mode::Folders,
-            LIST_CAP,
-        );
-        assert_eq!(names(&out), ["_Arcade"]);
+    fn the_folder_mode_is_a_list_that_picks_folders_and_round_trips() {
         assert_eq!(Mode::parse(Mode::Folders.as_str()), Mode::Folders);
         assert!(Mode::Folders.is_list() && Mode::Plain.is_list() && !Mode::Images.is_list());
+        assert!(Mode::Folders.picks_folder());
     }
 
     #[test]
-    fn core_places_keep_only_the_drives_core_browses() {
-        let all = places(
-            Platform::Mister,
-            "/media/fat/zaparoo/custom",
-            None,
-            None,
-            &|_| true,
-            &|_| Vec::new(),
-        );
-        let kept: Vec<String> = core_places(all).into_iter().map(|p| p.path).collect();
-        assert_eq!(kept.first().map(String::as_str), Some("/media/fat"));
-        assert!(!kept
-            .iter()
-            .any(|p| p == "/" || p == "/media/fat/zaparoo/custom"));
-        assert!(kept.iter().any(|p| p == "/media/usb0"));
+    fn core_roots_are_worded_as_the_disk_places_for_the_same_folder() {
+        let kind = |path: &str, name: &str| core_place(path, name).kind;
+        assert_eq!(kind("/media/fat/", "fat"), PlaceKind::SdCard);
+        assert_eq!(core_place("/media/fat/", "fat").path, "/media/fat");
+        assert_eq!(kind("/media/usb3", "usb3"), PlaceKind::Usb(3));
+        assert_eq!(kind("/media/network", "network"), PlaceKind::Network);
+        assert_eq!(kind("/media/fat/cifs", "cifs"), PlaceKind::Network);
+        assert_eq!(kind("/media/usbx", "usbx"), PlaceKind::Drive("usbx".into()));
+        assert_eq!(kind("/roms", "ROMs"), PlaceKind::Drive("ROMs".into()));
+        assert_eq!(kind("/roms", ""), PlaceKind::Drive("roms".into()));
     }
 
     #[test]

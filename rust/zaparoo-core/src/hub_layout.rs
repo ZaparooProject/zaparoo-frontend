@@ -637,10 +637,40 @@ impl HubLayout {
             return false;
         }
         let entry = HubItem::live_folder(path);
-        let Some(target) = target else {
-            self.place_in_first_gap(entry);
-            return true;
+        match target {
+            Some(target) => self.place_at_target(entry, target),
+            None => self.place_in_first_gap(entry),
+        }
+        true
+    }
+
+    /// Place a `zapscript` tile for one file picked on the Hub's own "Add
+    /// item…" browser, where `add_live_folder` puts a tile with a target.
+    /// `script` is Core's launch text for `path`. Returns `false` when
+    /// either is empty or the file already has a tile.
+    pub fn add_picked_file(&mut self, path: &str, script: &str, name: &str, target: usize) -> bool {
+        if path.is_empty()
+            || script.trim().is_empty()
+            || self
+                .target_position(HubItemKind::ZapScript.as_str(), "", path, "", script, "")
+                .is_some()
+        {
+            return false;
+        }
+        let entry = HubItem {
+            kind_raw: HubItemKind::ZapScript.as_str().to_string(),
+            path: path.to_string(),
+            script: script.to_string(),
+            name: name.to_string(),
+            ..HubItem::default()
         };
+        self.place_at_target(entry, target);
+        true
+    }
+
+    /// The Hub's own "Add item…" placement: the `target`-th visible cell
+    /// when it is a `blank`, after the last tile otherwise.
+    fn place_at_target(&mut self, entry: HubItem, target: usize) {
         let indices = self.visible_indices();
         match indices.get(target) {
             Some(&real) if self.items[real].kind() == HubItemKind::Blank => {
@@ -649,7 +679,6 @@ impl HubLayout {
             _ => self.items.push(entry),
         }
         self.trim_trailing_blanks();
-        true
     }
 
     /// The visible position of the live `folder` tile for `path`.
@@ -1083,6 +1112,36 @@ type = "blank"
             layout.live_folder_position("/media/fat/_Favorites"),
             Some(3)
         );
+    }
+
+    #[test]
+    fn a_picked_file_lands_on_the_target_gap_as_a_zapscript_tile() {
+        let mut layout = HubLayout::default();
+        layout.items.push(HubItem::category("Arcade"));
+        layout.items.push(HubItem {
+            kind_raw: "blank".into(),
+            ..HubItem::default()
+        });
+        layout.items.push(HubItem::action("settings"));
+        let path = "/media/fat/games/SNES/Super Metroid.sfc";
+        let script = "**launch:\"/media/fat/games/SNES/Super Metroid.sfc\"";
+        assert!(layout.add_picked_file(path, script, "Super Metroid", 1));
+        let tile = &layout.items[1];
+        assert_eq!(tile.kind(), HubItemKind::ZapScript);
+        assert_eq!(tile.path, path);
+        assert_eq!(tile.script, script);
+        assert_eq!(tile.name, "Super Metroid");
+        assert_eq!(
+            layout.target_position("zapscript", "", path, "", script, ""),
+            Some(1)
+        );
+        // Already pinned, or nothing to launch: refused.
+        assert!(!layout.add_picked_file(path, script, "Super Metroid", 0));
+        assert!(!layout.add_picked_file("/media/fat/a.sfc", " ", "a", 0));
+        assert!(!layout.add_picked_file("", script, "a", 0));
+        // Target on a tile: appended.
+        assert!(layout.add_picked_file("/media/fat/b.sfc", "b", "b", 0));
+        assert_eq!(layout.items[3].path, "/media/fat/b.sfc");
     }
 
     #[test]
