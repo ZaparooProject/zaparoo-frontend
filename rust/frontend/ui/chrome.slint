@@ -608,18 +608,23 @@ export component HeaderBar inherits Rectangle {
         font-size: Sizing.header-row-height;
     }
 
-    // Browse title in the header (CRT profile only), centered between the
-    // logo and the HUD and kept clear of the wider of the two; never less
-    // than a third of the header.
-    property <length> title-side: Sizing.header-side-margin + Math.max(root.logo-right,
-        Layout.hud-bottom-aligned ? root.hud-width + root.playtime-width + root.profile-width : 0px) + Sizing.pct-w(1.5);
+    // Browse title in the header (CRT profile only). It stays clear of the
+    // logo and the HUD: centered on the header when it fits there, else
+    // centered in the gap between the two and elided to it.
+    property <length> title-gap: Sizing.pct-w(1.5);
+    property <length> title-left: Sizing.header-side-margin + root.logo-right + root.title-gap;
+    property <length> title-right: root.width - Sizing.header-side-margin - root.title-gap
+        - (Layout.hud-bottom-aligned ? root.hud-width + root.playtime-width + root.profile-width : 0px);
     if Layout.title-in-header && root.browse-title != "": Text {
         property <length> natural: Math.ceil(title-measure.preferred-width / 1px) * 1px;
-        property <length> room: parent.width - 2 * root.title-side;
-        x: Sizing.snap((parent.width - self.width) / 2);
+        property <length> centered-x: (parent.width - self.natural) / 2;
+        property <bool> centered: self.centered-x >= root.title-left
+            && self.centered-x + self.natural <= root.title-right;
+        x: Sizing.snap(self.centered ? self.centered-x
+            : root.title-left + (root.title-right - root.title-left - self.width) / 2);
         y: parent.height - Sizing.header-row-height
             + Sizing.snap((Sizing.header-row-height - self.preferred-height) / 2);
-        width: Math.min(Math.max(Math.floor(parent.width / 3px) * 1px, self.room), self.natural);
+        width: Math.max(0px, Math.min(self.natural, Math.floor((root.title-right - root.title-left) / 1px) * 1px));
         overflow: elide;
         text: root.browse-title;
         color: Theme.text-primary;
