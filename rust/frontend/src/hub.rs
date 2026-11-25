@@ -391,7 +391,6 @@ fn resolve_entries(ctx: &Ctx, app: &App) {
             // structural absence rather than a dead row.
             update_enabled: crate::update::available(),
             internet_available: hub.internet_available,
-            pick_folders: false,
         };
         let page_size = hub.grid.page_size();
         let min_pages = if hub.move_armed() {
@@ -1926,6 +1925,7 @@ fn open_page_menu(ctx: &Ctx, app: &App) {
         ctx,
         app,
         vec![
+            crate::router::menu_row("hub_search"),
             crate::router::menu_row("hub_add"),
             crate::router::menu_row("hub_reset"),
             crate::router::menu_row("hub_settings"),
@@ -1937,6 +1937,7 @@ fn open_page_menu(ctx: &Ctx, app: &App) {
 /// A Menu list row, or the Add item chip.
 pub fn page_menu_accept(ctx: &Ctx, app: &App, id: &str) {
     match id {
+        "hub_search" => crate::search::enter(ctx, app, EntryMode::Fresh),
         "hub_add" => open_add_picker(ctx, app),
         "hub_reset" => {
             let ids = lock(&ctx.shared).all_categories.clone();
@@ -1978,9 +1979,6 @@ pub(crate) fn open_add_picker(ctx: &Ctx, app: &App) {
             categories_loaded: hub.categories_loaded,
             confirmed_categories: &shared.all_categories,
             update_enabled: crate::update::available(),
-            // A folder picked from this disk is one Core reads only where
-            // the two share it.
-            pick_folders: ctx.is_mister,
             ..Live::default()
         };
         rules::add_entries(
@@ -1992,10 +1990,6 @@ pub(crate) fn open_add_picker(ctx: &Ctx, app: &App) {
             },
         )
     };
-    if entries.is_empty() {
-        crate::router::open_alert(app, crate::DialogKind::HubFull);
-        return;
-    }
     let rows: Vec<crate::MenuEntry> = entries
         .iter()
         .map(|e| crate::MenuEntry {
@@ -2221,24 +2215,61 @@ pub fn add_picked(ctx: &Ctx, app: &App, id: &str) {
     arm_move_for_hub_index(ctx, app, i32::try_from(hub_index).unwrap_or(-1));
 }
 
-/// The folder picker's pick: a live folder tile on layout position
-/// `target` (where the focus was when Add item opened), handed to the user
-/// to carry as an Add item tile is. A folder already pinned live gets
-/// focus instead of a second tile.
+/// Browse…'s folder pick: a live folder tile on layout position `target`
+/// (where the focus was when Add item opened), handed to the user to carry
+/// as an Add item tile is. A folder already pinned live gets focus instead
+/// of a second tile.
 pub(crate) fn add_live_folder(ctx: &Ctx, app: &App, target: u32, path: &str) {
-    let hub_index = {
+    let position = {
         let mut shared = lock(&ctx.shared);
         let hub = &mut shared.hub;
         let target = usize::try_from(target).unwrap_or(usize::MAX);
-        if hub.layout.add_live_folder(path, Some(target)) {
+        let added = hub.layout.add_live_folder(path, Some(target));
+        if added {
             hub.save(&ctx.handle);
-            hub.layout.live_folder_position(path).map(|at| (at, true))
-        } else {
-            hub.layout.live_folder_position(path).map(|at| (at, false))
         }
+        hub.layout.live_folder_position(path).map(|at| (at, added))
     };
+    if position.is_none() {
+        tracing::warn!("hub update did nothing for live folder {path}");
+    }
+    land_picked(ctx, app, position, &rules::folder_name_for_path(path));
+}
+
+/// Browse…'s file pick: a `zapscript` tile launching Core's `script` for
+/// `path`, named `name`, placed and handed over as `add_live_folder` does
+/// a folder. A file already on the Hub gets focus instead.
+pub(crate) fn add_picked_file(
+    ctx: &Ctx,
+    app: &App,
+    target: u32,
+    path: &str,
+    script: &str,
+    name: &str,
+) {
+    let position = {
+        let mut shared = lock(&ctx.shared);
+        let hub = &mut shared.hub;
+        let target = usize::try_from(target).unwrap_or(usize::MAX);
+        let added = hub.layout.add_picked_file(path, script, name, target);
+        if added {
+            hub.save(&ctx.handle);
+        }
+        hub.layout
+            .target_position("zapscript", "", path, "", script, "")
+            .map(|at| (at, added))
+    };
+    if position.is_none() {
+        tracing::warn!("hub update did nothing for picked file {path}");
+    }
+    land_picked(ctx, app, position, name);
+}
+
+/// Show a Browse… pick on the Hub: a new tile armed for Move, a tile that
+/// was already there focused, or the error naming `name`.
+fn land_picked(ctx: &Ctx, app: &App, position: Option<(usize, bool)>, name: &str) {
     rebuild(ctx, app);
-    match hub_index {
+    match position {
         Some((at, true)) => arm_move_for_hub_index(ctx, app, i32::try_from(at).unwrap_or(-1)),
         Some((at, false)) => {
             let flat = {
@@ -2253,15 +2284,7 @@ pub(crate) fn add_live_folder(ctx: &Ctx, app: &App, target: u32, path: &str) {
                 commit_current(ctx);
             }
         }
-        None => {
-            tracing::warn!("hub update did nothing for live folder {path}");
-            crate::router::report_action_error(
-                ctx,
-                app,
-                "add_to_hub",
-                rules::folder_name_for_path(path).as_str(),
-            );
-        }
+        None => crate::router::report_action_error(ctx, app, "add_to_hub", name),
     }
 }
 

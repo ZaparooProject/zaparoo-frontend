@@ -929,6 +929,27 @@ fn media_browse_live_response(path: &str, max: usize, offset: usize) -> Value {
     })
 }
 
+/// `live: true` with no path: Core's browse roots, the folders a live
+/// browse starts from, as a `MiSTer` with one USB drive lists them.
+fn media_browse_live_roots() -> Value {
+    let entries: Vec<Value> = ["/media/fat", "/media/usb0"]
+        .iter()
+        .map(|path| {
+            json!({
+                "name": path.rsplit('/').next().unwrap_or(path),
+                "path": path,
+                "type": "root",
+            })
+        })
+        .collect();
+    json!({
+        "path": "",
+        "totalFiles": 0,
+        "totalDirs": entries.len(),
+        "entries": entries,
+    })
+}
+
 /// A saved row's page, or a page by position, as Core serves them.
 fn browse_position(
     params: &Value,
@@ -968,6 +989,9 @@ pub fn media_browse_response(params: &Value) -> Value {
             .and_then(Value::as_str)
             .and_then(|cursor| cursor.parse::<usize>().ok())
             .unwrap_or(0);
+        if path.is_empty() {
+            return media_browse_live_roots();
+        }
         return media_browse_live_response(path, max, offset);
     }
     let systems = params

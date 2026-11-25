@@ -2,13 +2,16 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
-// The file browser driver: one folder of the frontend's own disk at a time,
-// as a list (`Mode::Plain`), as a grid of image previews (`Mode::Images`),
-// or as a list of folders with a row that picks the folder itself
-// (`Mode::Folders`), with Places above every folder. A caller opens it with
-// a `Purpose`, which decides what a pick does; the browser itself only
-// walks folders. Folder reads run off the event loop and land under a
-// ticket, and the folder on screen stays until the next one is ready.
+// The file browser driver: one folder at a time, as a list (`Mode::Plain`),
+// as a grid of image previews (`Mode::Images`), or as Core's folders and
+// launchable files with a row that picks the folder itself
+// (`Mode::Folders`), with Places above every folder. The image and plain
+// modes read the frontend's own disk; the folder mode asks Core
+// (`media.browse` `live`), whose browse roots are its Places, so it only
+// reaches what Core itself would launch from. A caller opens it with a
+// `Purpose`, which decides what a pick does; the browser itself only walks
+// folders. Folder reads run off the event loop and land under a ticket,
+// and the folder on screen stays until the next one is ready.
 // Paging, the list window, the fast-scroll rail, the selection debounce,
 // the press cue and the cover fade are the games screens' own
 // (`page_motion`, `browse_motion`, `press_feedback`, `cover_fade`), so the
@@ -19,6 +22,7 @@ use zaparoo_app::file_browser::{self as rules, EntryKind, Mode, Place, PlaceKind
 use zaparoo_app::media_list::{self as list_rules, SelectionPersist};
 use zaparoo_app::paged_grid::Grid;
 use zaparoo_core::input_actions::actions;
+use zaparoo_core::media_types::{MediaBrowseParams, MediaBrowseResult};
 use zaparoo_core::persist::{FileBrowserState, HubTarget};
 
 use crate::browse_motion::Rapid;
@@ -34,8 +38,9 @@ pub enum Purpose {
     /// Choose cover image… on a deck, by its id; the screen it was opened
     /// from is where the browser returns.
     DeckCover(String, crate::Screen),
-    /// Add item > Custom folder…: a live folder tile, placed on the Hub
-    /// cell `target.hub_index`.
+    /// Add item > Browse…: a live folder tile for a folder, or a
+    /// `zapscript` tile for a file, placed on the Hub cell
+    /// `target.hub_index`.
     HubFolder(HubTarget),
     /// Settings > Appearance > Background image: an image, or a folder to
     /// pick one from.
@@ -73,6 +78,8 @@ struct Row {
     name: String,
     /// The absolute path; empty for the row that only reports.
     path: String,
+    /// Core's launch text for a file it listed; empty otherwise.
+    script: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -214,6 +221,7 @@ fn read_folder(dir: &str, mode: Mode) -> Result<(Vec<Row>, rules::Letters, Fill)
             kind: RowKind::PickFolder,
             name: String::new(),
             path: dir.to_string(),
+            script: String::new(),
         });
         letters.leading += 1;
     }
@@ -224,6 +232,7 @@ fn read_folder(dir: &str, mode: Mode) -> Result<(Vec<Row>, rules::Letters, Fill)
             EntryKind::File => RowKind::File,
         },
         name: entry.name,
+        script: String::new(),
     }));
     let omitted = listing.omitted + unread;
     let fill = if rows.is_empty() && omitted == 0 {
@@ -236,6 +245,7 @@ fn read_folder(dir: &str, mode: Mode) -> Result<(Vec<Row>, rules::Letters, Fill)
             kind: RowKind::More(omitted),
             name: String::new(),
             path: String::new(),
+            script: String::new(),
         });
     }
     Ok((rows, letters, fill))
@@ -248,20 +258,15 @@ fn place_rows(places: &[Place]) -> Vec<Row> {
             kind: RowKind::Place(place.kind.clone()),
             name: String::new(),
             path: place.path.clone(),
+            script: String::new(),
         })
         .collect()
 }
 
 /// Read a folder, or Places for `None`, off the event loop. Places are
 /// re-read every time: a drive can come and go while the browser is open.
-/// A folder picked for Core only offers the drives Core browses.
 fn read(platform: Platform, custom_dir: &str, dir: Option<String>, mode: Mode) -> Landing {
     let places = read_places(platform, custom_dir);
-    let places = if mode == Mode::Folders {
-        rules::core_places(places)
-    } else {
-        places
-    };
     match dir {
         None => Landing {
             rows: place_rows(&places),
@@ -292,12 +297,204 @@ fn read(platform: Platform, custom_dir: &str, dir: Option<String>, mode: Mode) -
     }
 }
 
+fn places_landing(places: Vec<Place>) -> Landing {
+    Landing {
+        rows: place_rows(&places),
+        places,
+        dir: None,
+        letters: rules::Letters::default(),
+        fill: Fill::Ready,
+    }
+}
+
+fn error_landing(places: Vec<Place>, dir: Option<String>) -> Landing {
+    Landing {
+        places,
+        dir,
+        rows: Vec::new(),
+        letters: rules::Letters::default(),
+        fill: Fill::Error,
+    }
+}
+
+/// Core's browse roots as Places, in Core's order.
+fn core_places(roots: &MediaBrowseResult) -> Vec<Place> {
+    roots
+        .entries
+        .iter()
+        .filter(|entry| entry.entry_type == "root" && !entry.path.is_empty())
+        .map(|entry| rules::core_place(&entry.path, &entry.name))
+        .collect()
+}
+
+/// One folder as Core listed it, over however many pages it took: the
+/// pick row, Core's folders, then its launchable files, each in Core's
+/// order and under its display name. Past `LIST_CAP` the rest are counted.
+fn core_folder(places: Vec<Place>, dir: String, pages: &[MediaBrowseResult]) -> Landing {
+    let mut entries = Vec::new();
+    let mut rows = Vec::new();
+    for entry in pages.iter().flat_map(|page| &page.entries) {
+        if rows.len() >= rules::LIST_CAP {
+            break;
+        }
+        let (kind, entry_kind) = match entry.entry_type.as_str() {
+            "directory" => (RowKind::Folder, EntryKind::Folder),
+            "media" if !entry.zap_script.trim().is_empty() => (RowKind::File, EntryKind::File),
+            _ => continue,
+        };
+        entries.push(rules::Entry {
+            kind: entry_kind,
+            name: entry.name.clone(),
+        });
+        rows.push(Row {
+            kind,
+            name: entry.name.clone(),
+            path: entry.path.clone(),
+            script: entry.zap_script.clone(),
+        });
+    }
+    let listed = pages.first().map_or(0, |page| {
+        page.total_dirs.unwrap_or(0) as usize + page.total_files as usize
+    });
+    let omitted = listed.saturating_sub(rows.len());
+    let mut letters = rules::letters(&entries);
+    letters.leading += 1;
+    rows.insert(
+        0,
+        Row {
+            kind: RowKind::PickFolder,
+            name: String::new(),
+            path: dir.clone(),
+            script: String::new(),
+        },
+    );
+    if omitted > 0 {
+        rows.push(Row {
+            kind: RowKind::More(omitted),
+            name: String::new(),
+            path: String::new(),
+            script: String::new(),
+        });
+    }
+    Landing {
+        places,
+        dir: Some(dir),
+        rows,
+        letters,
+        fill: Fill::Ready,
+    }
+}
+
+/// Where a Core read goes once it has the roots.
+#[derive(Debug, Clone)]
+enum CoreDir {
+    Places,
+    /// The SD card when Core lists it as a root, else Places.
+    Start,
+    /// A folder; a failed read shows the error.
+    Folder(String),
+    /// A folder after a kill; a failed read shows Places.
+    Restore(String),
+}
+
+/// The folder a Core read lists after the roots, and whether a failed read
+/// falls back to Places. `None` lands on Places.
+fn core_target(target: CoreDir, places: &[Place]) -> Option<(String, bool)> {
+    match target {
+        CoreDir::Places => None,
+        CoreDir::Start => places
+            .iter()
+            .any(|place| place.path == rules::FOLDER_START)
+            .then(|| (rules::FOLDER_START.to_string(), false)),
+        CoreDir::Folder(dir) => Some((dir, false)),
+        CoreDir::Restore(dir) => Some((dir, true)),
+    }
+}
+
+/// Core's largest browse page.
+const CORE_PAGE: u32 = 1000;
+
+/// Every page of one live folder, up to the list cap.
+async fn read_core_pages(
+    client: &zaparoo_core::client::Client,
+    dir: &str,
+) -> Result<Vec<MediaBrowseResult>, zaparoo_core::client::ClientError> {
+    let mut pages: Vec<MediaBrowseResult> = Vec::new();
+    let mut cursor = None;
+    loop {
+        let page = client
+            .media_browse(MediaBrowseParams {
+                path: dir.to_string(),
+                live: true,
+                cursor: cursor.take(),
+                max_results: Some(CORE_PAGE),
+                ..MediaBrowseParams::default()
+            })
+            .await?;
+        let next = page.next_cursor().filter(|_| page.has_next_page());
+        pages.push(page);
+        let read: usize = pages.iter().map(|page| page.entries.len()).sum();
+        match next {
+            Some(next) if read < rules::LIST_CAP => cursor = Some(next),
+            _ => return Ok(pages),
+        }
+    }
+}
+
+/// The Hub's Browse… through Core: its roots every time, as a drive can
+/// come and go, then the folder `target` asks for.
+async fn read_core(
+    client: std::sync::Arc<zaparoo_core::client::Client>,
+    target: CoreDir,
+) -> Landing {
+    let roots = match client
+        .media_browse(MediaBrowseParams {
+            live: true,
+            ..MediaBrowseParams::default()
+        })
+        .await
+    {
+        Ok(roots) => roots,
+        Err(error) => {
+            tracing::warn!("file browser: Core did not list its roots: {error}");
+            return error_landing(Vec::new(), None);
+        }
+    };
+    let places = core_places(&roots);
+    let Some((dir, fallback)) = core_target(target, &places) else {
+        return places_landing(places);
+    };
+    match read_core_pages(&client, &dir).await {
+        Ok(pages) => core_folder(places, dir, &pages),
+        Err(error) => {
+            tracing::warn!("file browser: Core did not list a folder: {error}");
+            if fallback {
+                places_landing(places)
+            } else {
+                error_landing(places, Some(dir))
+            }
+        }
+    }
+}
+
 /// Where a fill puts focus once it lands.
 #[derive(Debug, Clone)]
 enum Seat {
     First,
     /// The entry with this path, as Back from a folder or a restore asks.
     Path(String),
+}
+
+/// A new fill's ticket and the browser's mode, with the route pending.
+fn begin(ctx: &Ctx, app: &App) -> (u64, Mode) {
+    let next = {
+        let mut shared = lock(&ctx.shared);
+        let model = &mut shared.file_browser;
+        model.ticket = model.ticket.wrapping_add(1);
+        (model.ticket, model.mode)
+    };
+    crate::router::begin_pending(app, crate::Screen::FileBrowser);
+    next
 }
 
 /// Run `read` off the event loop and show what it finds. The folder on
@@ -307,13 +504,7 @@ fn start(
     app: &App,
     read: impl FnOnce(Platform, String, Mode) -> (Landing, Seat) + Send + 'static,
 ) {
-    let (ticket, mode) = {
-        let mut shared = lock(&ctx.shared);
-        let model = &mut shared.file_browser;
-        model.ticket = model.ticket.wrapping_add(1);
-        (model.ticket, model.mode)
-    };
-    crate::router::begin_pending(app, crate::Screen::FileBrowser);
+    let (ticket, mode) = begin(ctx, app);
     let platform = platform(ctx);
     let custom_dir = crate::customization::root().to_string_lossy().into_owned();
     let weak = app.as_weak();
@@ -331,8 +522,29 @@ fn start(
     lock(&ctx.shared).file_browser.task.replace(task);
 }
 
+/// Ask Core for `target` and show what it lists, as `start` does a disk
+/// read.
+fn start_core(ctx: &Ctx, app: &App, target: CoreDir, seat: Seat) {
+    let (ticket, _) = begin(ctx, app);
+    let client = ctx.store.client();
+    let weak = app.as_weak();
+    let ctx2 = ctx.clone();
+    let task = ctx.handle.spawn(async move {
+        let landing = read_core(client, target).await;
+        let _ = weak.upgrade_in_event_loop(move |app| {
+            land(&ctx2, &app, ticket, landing, &seat);
+        });
+    });
+    lock(&ctx.shared).file_browser.task.replace(task);
+}
+
 /// Fill `dir`, or Places for `None`.
 fn fill(ctx: &Ctx, app: &App, dir: Option<String>, seat: Seat) {
+    if lock(&ctx.shared).file_browser.mode == Mode::Folders {
+        let target = dir.map_or(CoreDir::Places, CoreDir::Folder);
+        start_core(ctx, app, target, seat);
+        return;
+    }
     start(ctx, app, move |platform, custom_dir, mode| {
         (read(platform, &custom_dir, dir, mode), seat)
     });
@@ -406,9 +618,9 @@ pub(crate) fn open_hub_icon(ctx: &Ctx, app: &App, target: HubTarget, icon: &str)
     });
 }
 
-/// Add item > Custom folder…: folders of the disk Core browses, starting
-/// on the SD card, for a live folder tile that lands on Hub cell
-/// `hub_index`.
+/// Add item > Browse…: Core's folders and launchable files under its
+/// browse roots, starting on the SD card, for a tile that lands on Hub
+/// cell `hub_index`.
 pub(crate) fn open_hub_folder(ctx: &Ctx, app: &App, hub_index: u32) {
     let target = HubTarget {
         hub_index,
@@ -428,10 +640,7 @@ pub(crate) fn open_hub_folder(ctx: &Ctx, app: &App, hub_index: u32) {
             ..FileBrowserState::default()
         };
     }
-    start(ctx, app, move |platform, custom_dir, mode| {
-        let dir = Some(rules::FOLDER_START.to_string()).filter(|dir| is_dir(dir));
-        (read(platform, &custom_dir, dir, mode), Seat::First)
-    });
+    start_core(ctx, app, CoreDir::Start, Seat::First);
 }
 
 /// Settings > Appearance > Background image: images and folders, from the
@@ -546,6 +755,11 @@ pub(crate) fn restore(ctx: &Ctx, app: &App) {
         Some(dir) => rules::join(dir, &saved.selected),
         None => saved.selected.clone(),
     });
+    if mode == Mode::Folders {
+        let target = dir.map_or(CoreDir::Places, CoreDir::Restore);
+        start_core(ctx, app, target, seat);
+        return;
+    }
     start(ctx, app, move |platform, custom_dir, mode| {
         let dir = dir.filter(|dir| is_dir(dir));
         (read(platform, &custom_dir, dir, mode), seat)
@@ -1129,7 +1343,8 @@ fn leave(ctx: &Ctx, app: &App) {
     }
 }
 
-fn pick(ctx: &Ctx, app: &App, path: &str) {
+fn pick(ctx: &Ctx, app: &App, row: &Row) {
+    let path = row.path.as_str();
     let purpose = lock(&ctx.shared).file_browser.purpose.clone();
     match purpose {
         Some(Purpose::HubIcon(target)) => crate::hub::set_tile_icon(ctx, app, &target, path),
@@ -1138,7 +1353,18 @@ fn pick(ctx: &Ctx, app: &App, path: &str) {
             // back on screen; leaving first keeps that order.
             crate::router::forget_menu_return(ctx);
             leave(ctx, app);
-            crate::hub::add_live_folder(ctx, app, target.hub_index, path);
+            if row.kind == RowKind::File {
+                crate::hub::add_picked_file(
+                    ctx,
+                    app,
+                    target.hub_index,
+                    path,
+                    &row.script,
+                    &row.name,
+                );
+            } else {
+                crate::hub::add_live_folder(ctx, app, target.hub_index, path);
+            }
             return;
         }
         Some(Purpose::Background) => crate::settings::set_background_image(ctx, app, path),
@@ -1237,7 +1463,7 @@ fn accept(ctx: &Ctx, app: &App) {
     }
     match row.kind {
         RowKind::Place(_) | RowKind::Folder => fill(ctx, app, Some(row.path), Seat::First),
-        RowKind::File | RowKind::PickFolder => pick(ctx, app, &row.path),
+        RowKind::File | RowKind::PickFolder => pick(ctx, app, &row),
         RowKind::More(_) => {}
     }
 }
@@ -1339,6 +1565,27 @@ impl Shared {
     pub(crate) fn file_browser_bump_ticket(&mut self) {
         self.file_browser.ticket = self.file_browser.ticket.wrapping_add(1);
     }
+}
+
+/// Core's answer a route test cannot fetch on its undriven runtime: land
+/// `roots` and, for a folder, its `page` (`None` as a failed read) as the
+/// pending fill would.
+#[cfg(all(test, feature = "mister"))]
+pub(crate) fn land_core_now(
+    ctx: &Ctx,
+    app: &App,
+    roots: &MediaBrowseResult,
+    folder: Option<(&str, Option<&MediaBrowseResult>)>,
+    select: &str,
+) {
+    let ticket = lock(&ctx.shared).file_browser.ticket;
+    let places = core_places(roots);
+    let landing = match folder {
+        None => places_landing(places),
+        Some((dir, Some(page))) => core_folder(places, dir.to_string(), std::slice::from_ref(page)),
+        Some((dir, None)) => error_landing(places, Some(dir.to_string())),
+    };
+    land(ctx, app, ticket, landing, &Seat::Path(select.to_string()));
 }
 
 /// The folder read a route test cannot run on its undriven runtime: read
@@ -1509,5 +1756,68 @@ mod tests {
         }]);
         assert_eq!(rows[0].kind, RowKind::Place(PlaceKind::Root));
         assert_eq!(rows[0].path, "/");
+    }
+
+    fn entry(kind: &str, path: &str, script: &str) -> zaparoo_core::media_types::BrowseEntry {
+        zaparoo_core::media_types::BrowseEntry {
+            name: rules::base_name(path).to_string(),
+            path: path.into(),
+            entry_type: kind.into(),
+            zap_script: script.into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_core_read_starts_on_the_sd_card_only_when_core_lists_it() {
+        let roots = MediaBrowseResult {
+            entries: vec![
+                entry("root", "/media/usb0", ""),
+                entry("directory", "/media/usb0/x", ""),
+            ],
+            ..Default::default()
+        };
+        let places = core_places(&roots);
+        assert_eq!(places.len(), 1, "only roots");
+        assert_eq!(places[0].kind, PlaceKind::Usb(0));
+        assert_eq!(core_target(CoreDir::Start, &places), None);
+        let fat = vec![rules::core_place("/media/fat", "fat")];
+        assert_eq!(
+            core_target(CoreDir::Start, &fat),
+            Some(("/media/fat".into(), false))
+        );
+        assert_eq!(
+            core_target(CoreDir::Restore("/media/fat/a".into()), &fat),
+            Some(("/media/fat/a".into(), true))
+        );
+        assert_eq!(core_target(CoreDir::Places, &fat), None);
+    }
+
+    #[test]
+    fn a_core_folder_lists_its_folders_then_launchable_files_and_counts_the_rest() {
+        let page = MediaBrowseResult {
+            entries: vec![
+                entry("directory", "/media/fat/_Arcade", ""),
+                entry("media", "/media/fat/menu", "**launch:/media/fat/menu.rbf"),
+                entry("media", "/media/fat/broken", ""),
+            ],
+            total_files: 5,
+            total_dirs: Some(1),
+            ..Default::default()
+        };
+        let landing = core_folder(Vec::new(), "/media/fat".into(), &[page]);
+        let kinds: Vec<RowKind> = landing.rows.iter().map(|row| row.kind.clone()).collect();
+        assert_eq!(
+            kinds,
+            [
+                RowKind::PickFolder,
+                RowKind::Folder,
+                RowKind::File,
+                RowKind::More(4)
+            ]
+        );
+        assert_eq!(landing.rows[2].script, "**launch:/media/fat/menu.rbf");
+        assert_eq!(landing.letters.leading, 2, "the pick row and the folder");
+        assert_eq!(landing.fill, Fill::Ready);
     }
 }

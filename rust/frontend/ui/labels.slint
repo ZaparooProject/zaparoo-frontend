@@ -354,9 +354,10 @@ export global Labels {
         if (key == "filter:none") { return @tr("No tags available"); }
         if (Labels.filter-category(key, name) != "") { return Labels.filter-category(key, name); }
         // Hub rows and its Menu.
+        if (key == "hub_search") { return @tr("Search…"); }
         if (key == "hub_add") { return @tr("Add item…"); }
         // The Add item row that picks a folder from disk.
-        if (key == "hub_add:folder") { return @tr("Custom folder…"); }
+        if (key == "hub_add:folder") { return @tr("Browse…"); }
         if (key == "hub_move:tile") { return @tr("Move tile"); }
         if (key == "hub_rename:tile") { return @tr("Rename tile…"); }
         if (key == "hub_icon:tile") { return @tr("Change tile icon…"); }
@@ -479,7 +480,6 @@ export global DialogLabels {
         if (kind == DialogKind.notice) { return @tr("Welcome to Zaparoo Frontend"); }
         if (kind == DialogKind.core-version) { return @tr("Update Zaparoo Core"); }
         if (kind == DialogKind.first-run) { return @tr("First-time setup"); }
-        if (kind == DialogKind.hub-full) { return @tr("Nothing left to add"); }
         if (kind == DialogKind.unlink-online) { return @tr("Unlink Online account?"); }
         if (kind == DialogKind.ra-log-out) { return @tr("Log out of RetroAchievements?"); }
         if (kind == DialogKind.restore-online-backup) { return @tr("Restore this backup?"); }
@@ -542,9 +542,6 @@ export global DialogLabels {
         }
         if (kind == DialogKind.first-run) {
             return @tr("Start a media database update to find your games. It runs in the background, and systems appear as they are indexed.");
-        }
-        if (kind == DialogKind.hub-full) {
-            return @tr("All categories and actions are already on the Hub. To add a game or system, open its Options menu and choose \"Add to Hub\".");
         }
         if (kind == DialogKind.action-error) {
             return DialogLabels.error-body(error, arg, repair-reason, repair-launcher, repair-plugin);

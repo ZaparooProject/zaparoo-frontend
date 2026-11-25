@@ -11972,11 +11972,14 @@ fn the_hubs_more_chip_holds_quit_and_backing_out_returns_to_it() {
     crate::sizing::apply_scene(&app, crate::sizing::Scene::of(&app, 1280.0, 720.0, false));
     settle(&window);
     assert_eq!(app.global::<Shell>().get_active_screen(), Screen::Hub);
-    assert_eq!(crate::page_bar::chip_ids(&app), ["hub_add", "more"]);
+    assert_eq!(
+        crate::page_bar::chip_ids(&app),
+        ["hub_search", "hub_add", "more"]
+    );
     let bar = app.global::<crate::PageBar>();
     let overlays = app.global::<crate::Overlays>();
     crate::router::handle_action(&ctx, &app, "page_menu");
-    crate::router::handle_action(&ctx, &app, "right");
+    crate::router::handle_action(&ctx, &app, "left");
     crate::router::handle_action(&ctx, &app, "accept");
     assert!(overlays.get_list_open());
     assert_eq!(overlays.get_list_title(), "title:more");
@@ -11989,7 +11992,7 @@ fn the_hubs_more_chip_holds_quit_and_backing_out_returns_to_it() {
     crate::router::handle_action(&ctx, &app, "cancel");
     assert!(!overlays.get_list_open());
     assert!(bar.get_focused());
-    assert_eq!(bar.get_index(), 1);
+    assert_eq!(bar.get_index(), 2);
     // Quit still asks first.
     crate::router::handle_action(&ctx, &app, "accept");
     crate::router::handle_action(&ctx, &app, "up");
@@ -11997,6 +12000,28 @@ fn the_hubs_more_chip_holds_quit_and_backing_out_returns_to_it() {
     advance(zaparoo_app::input::PRESS_FEEDBACK_MS + 10);
     assert!(overlays.get_dialog_open());
     assert_eq!(overlays.get_dialog_kind(), DialogKind::QuitConfirm);
+}
+
+#[test]
+fn menu_then_accept_on_the_hub_opens_search_and_back_returns() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    seed_hub_tiles(&ctx, &app);
+    crate::sizing::apply_scene(&app, crate::sizing::Scene::of(&app, 1280.0, 720.0, false));
+    settle(&window);
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    crate::router::lock(&ctx.shared).persist.search.query = "stale".into();
+    crate::router::handle_action(&ctx, &app, "page_menu");
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert_eq!(shell.get_active_screen(), Screen::Search);
+    // A fresh search, as the Search tile opens it.
+    assert_eq!(app.global::<crate::SearchView>().get_before(), "");
+    crate::router::handle_action(&ctx, &app, "cancel");
+    settle(&window);
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
 }
 
 #[test]
@@ -13040,66 +13065,187 @@ fn a_launch_refills_a_browse_list_only_when_it_holds_a_multi_disc_folder() {
     assert_eq!(crate::router::lock(&ctx.shared).games.ticket, ticket + 1);
 }
 
+/// One of Core's live browse entries.
+fn live_entry(
+    kind: &str,
+    path: &str,
+    name: &str,
+    script: &str,
+) -> zaparoo_core::media_types::BrowseEntry {
+    zaparoo_core::media_types::BrowseEntry {
+        name: name.into(),
+        path: path.into(),
+        entry_type: kind.into(),
+        zap_script: script.into(),
+        ..Default::default()
+    }
+}
+
+/// Core's live browse roots: the SD card and one USB drive.
+fn live_roots() -> zaparoo_core::media_types::MediaBrowseResult {
+    zaparoo_core::media_types::MediaBrowseResult {
+        entries: vec![
+            live_entry("root", "/media/fat", "fat", ""),
+            live_entry("root", "/media/usb0", "usb0", ""),
+        ],
+        total_dirs: Some(2),
+        ..Default::default()
+    }
+}
+
+/// One live page of `dir`.
+fn live_page(
+    dir: &str,
+    entries: Vec<zaparoo_core::media_types::BrowseEntry>,
+) -> zaparoo_core::media_types::MediaBrowseResult {
+    let dirs = entries
+        .iter()
+        .filter(|entry| entry.entry_type == "directory")
+        .count();
+    zaparoo_core::media_types::MediaBrowseResult {
+        path: dir.into(),
+        total_files: u32::try_from(entries.len() - dirs).unwrap_or(0),
+        total_dirs: Some(u32::try_from(dirs).unwrap_or(0)),
+        entries,
+        ..Default::default()
+    }
+}
+
+fn list_names(app: &App) -> Vec<String> {
+    app.global::<crate::FileBrowserView>()
+        .get_list_rows()
+        .iter()
+        .map(|c| c.name.to_string())
+        .collect()
+}
+
 #[test]
 #[allow(
     clippy::expect_used,
     clippy::too_many_lines,
-    reason = "one walk from Add item to a placed live folder tile, failing fast on a missing row"
+    reason = "one walk from Add item through Core's folders to a pinned file and folder, failing fast on a missing row"
 )]
-fn add_item_picks_a_folder_from_disk_for_a_live_folder_tile() {
+fn add_item_browses_core_and_pins_a_file_or_a_folder() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, window) = boot();
-    let (_runtime, mut ctx) = offline_ctx();
-    // Folders are picked where the frontend shares Core's disk.
-    ctx.is_mister = true;
+    let (_runtime, ctx) = offline_ctx();
     crate::sizing::apply_scene(
         &app,
         crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
     );
-    let root = std::env::temp_dir().join(format!("zaparoo-live-pick-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&root);
-    std::fs::create_dir_all(root.join("_RA_Cores")).expect("folder");
-    std::fs::create_dir_all(root.join("_Arcade")).expect("folder");
-    std::fs::write(root.join("menu.rbf"), b"x").expect("file");
     hub_with_saved_search(&ctx, &app);
     let shell = app.global::<Shell>();
+    let view = app.global::<crate::FileBrowserView>();
     settle(&window);
+    let script = "**launch.rbf:/media/fat/menu.rbf";
+    let fat = || {
+        live_page(
+            "/media/fat",
+            vec![
+                live_entry("directory", "/media/fat/_Arcade", "_Arcade", ""),
+                live_entry("directory", "/media/fat/_RA_Cores", "_RA_Cores", ""),
+                live_entry("media", "/media/fat/menu.rbf", "menu", script),
+            ],
+        )
+    };
 
     crate::hub::add_picked(&ctx, &app, zaparoo_app::hub::CUSTOM_FOLDER_ENTRY);
-    assert!(
-        shell.get_transitioning(),
-        "the folder read is a deferred route"
+    assert!(shell.get_transitioning(), "Core's read is a deferred route");
+    crate::file_browser::land_core_now(
+        &ctx,
+        &app,
+        &live_roots(),
+        Some(("/media/fat", Some(&fat()))),
+        "",
     );
-    let fat = root.to_string_lossy().into_owned();
-    crate::file_browser::land_now(&ctx, &app, Some(&fat), "");
     settle(&window);
     assert_eq!(shell.get_active_screen(), Screen::FileBrowser);
-    let view = app.global::<crate::FileBrowserView>();
     assert_eq!(view.get_mode(), crate::FileBrowserMode::Plain);
     assert!(!view.get_has_menu());
-    let names: Vec<String> = view
-        .get_list_rows()
-        .iter()
-        .map(|c| c.name.to_string())
-        .collect();
+    assert_eq!(view.get_title(), "fat");
     assert_eq!(
-        names,
-        ["Add this folder", "_Arcade/", "_RA_Cores/"],
-        "the pick row, then folders only"
+        list_names(&app),
+        ["Add this folder", "_Arcade/", "_RA_Cores/", "menu"],
+        "the pick row, then Core's folders and files"
     );
-    assert!(view.get_focused_picks());
     assert_eq!(
         crate::router::lock(&ctx.shared).persist.file_browser.mode,
         "folders"
     );
 
-    // Into a folder, then pick it.
+    // A file: a zapscript tile at Add item's cell, armed for Move.
+    for _ in 0..3 {
+        crate::router::handle_action(&ctx, &app, "down");
+    }
+    assert!(view.get_focused_picks());
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        let tile = shared
+            .hub
+            .layout
+            .visible()
+            .find(|item| item.kind_raw == "zapscript")
+            .expect("the file's tile");
+        assert_eq!(tile.path, "/media/fat/menu.rbf");
+        assert_eq!(tile.script, script);
+        assert_eq!(tile.name, "menu");
+        assert!(tile.system.is_empty());
+        assert!(shared.hub.move_armed(), "handed to the user to carry");
+    }
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert!(!crate::router::lock(&ctx.shared).hub.move_armed());
+
+    // The same file again: no second tile.
+    crate::hub::add_picked(&ctx, &app, zaparoo_app::hub::CUSTOM_FOLDER_ENTRY);
+    crate::file_browser::land_core_now(
+        &ctx,
+        &app,
+        &live_roots(),
+        Some(("/media/fat", Some(&fat()))),
+        "/media/fat/menu.rbf",
+    );
+    crate::router::handle_action(&ctx, &app, "accept");
+    settle(&window);
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        let tiles = shared
+            .hub
+            .layout
+            .visible()
+            .filter(|item| item.kind_raw == "zapscript")
+            .count();
+        assert_eq!(tiles, 1);
+        assert!(!shared.hub.move_armed(), "focused, not carried");
+    }
+
+    // A folder: into it, then pick it for a live folder tile.
+    crate::hub::add_picked(&ctx, &app, zaparoo_app::hub::CUSTOM_FOLDER_ENTRY);
+    crate::file_browser::land_core_now(
+        &ctx,
+        &app,
+        &live_roots(),
+        Some(("/media/fat", Some(&fat()))),
+        "",
+    );
     crate::router::handle_action(&ctx, &app, "down");
     crate::router::handle_action(&ctx, &app, "down");
     crate::router::handle_action(&ctx, &app, "accept");
-    let cores = root.join("_RA_Cores").to_string_lossy().into_owned();
-    crate::file_browser::land_now(&ctx, &app, Some(&cores), "");
+    assert!(shell.get_transitioning());
+    let cores = "/media/fat/_RA_Cores";
+    crate::file_browser::land_core_now(
+        &ctx,
+        &app,
+        &live_roots(),
+        Some((cores, Some(&live_page(cores, Vec::new())))),
+        "",
+    );
     assert_eq!(view.get_title(), "_RA_Cores");
+    assert_eq!(list_names(&app), ["Add this folder"]);
     crate::router::handle_action(&ctx, &app, "accept");
     settle(&window);
     assert_eq!(shell.get_active_screen(), Screen::Hub);
@@ -13112,37 +13258,67 @@ fn add_item_picks_a_folder_from_disk_for_a_live_folder_tile() {
             .find(|item| item.is_live_folder())
             .expect("the live folder tile");
         assert_eq!(tile.path, cores);
-        assert!(tile.system.is_empty());
-        let entry = shared
-            .hub
-            .entries
-            .iter()
-            .find(|entry| entry.live)
-            .expect("its entry");
-        assert_eq!(entry.name, "_RA_Cores");
-        assert!(shared.hub.move_armed(), "handed to the user to carry");
+        assert!(shared.hub.move_armed());
     }
+}
 
-    // Back out of an empty pick returns to Add item.
+#[test]
+fn browse_climbs_to_cores_roots_and_shows_cores_errors() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    crate::sizing::apply_scene(
+        &app,
+        crate::sizing::Scene::of(&app, f64::from(W), f64::from(H), false),
+    );
+    hub_with_saved_search(&ctx, &app);
+    let shell = app.global::<Shell>();
+    let view = app.global::<crate::FileBrowserView>();
+    settle(&window);
+
     crate::hub::add_picked(&ctx, &app, zaparoo_app::hub::CUSTOM_FOLDER_ENTRY);
-    crate::file_browser::land_now(&ctx, &app, None, "");
+    crate::file_browser::land_core_now(
+        &ctx,
+        &app,
+        &live_roots(),
+        Some(("/media/fat", Some(&live_page("/media/fat", Vec::new())))),
+        "",
+    );
+    // Back from a root shows Core's roots as Places, on the one it left.
+    crate::router::handle_action(&ctx, &app, "cancel");
+    assert!(shell.get_transitioning());
+    crate::file_browser::land_core_now(&ctx, &app, &live_roots(), None, "/media/fat");
+    assert!(view.get_places());
+    assert_eq!(list_names(&app), ["SD card", "USB 0"]);
+    assert_eq!(view.get_current_index(), 0);
+
+    // A folder Core will not list shows the error.
+    crate::router::handle_action(&ctx, &app, "down");
+    crate::router::handle_action(&ctx, &app, "accept");
+    crate::file_browser::land_core_now(&ctx, &app, &live_roots(), Some(("/media/usb0", None)), "");
+    assert_eq!(view.get_state(), crate::ContentState::Error);
+
+    // A Core without roots: an error on Places, and Back returns to Add item.
+    crate::router::handle_action(&ctx, &app, "cancel");
+    crate::file_browser::land_core_now(
+        &ctx,
+        &app,
+        &zaparoo_core::media_types::MediaBrowseResult::default(),
+        None,
+        "",
+    );
     assert!(view.get_places());
     crate::router::handle_action(&ctx, &app, "cancel");
     settle(&window);
     assert_eq!(shell.get_active_screen(), Screen::Hub);
     assert!(app.global::<crate::Overlays>().get_list_open());
-    let _ = std::fs::remove_dir_all(&root);
 }
 
 #[test]
-fn a_folder_pick_restores_on_its_folder_after_a_kill() {
+fn a_browse_restores_on_its_folder_after_a_kill() {
     assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
     let (app, _window) = boot();
     let (_runtime, ctx) = offline_ctx();
-    let root = std::env::temp_dir().join(format!("zaparoo-live-restore-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&root);
-    let _ = std::fs::create_dir_all(root.join("_Favorites"));
-    let dir = root.to_string_lossy().into_owned();
     {
         let mut shared = crate::router::lock(&ctx.shared);
         shared.persist.active_screen = "file-browser".into();
@@ -13152,7 +13328,7 @@ fn a_folder_pick_restores_on_its_folder_after_a_kill() {
                 identity: String::new(),
             },
             mode: "folders".into(),
-            dir: dir.clone(),
+            dir: "/media/fat".into(),
             selected: "_Favorites".into(),
             deck_id: String::new(),
             header_logo: false,
@@ -13160,16 +13336,23 @@ fn a_folder_pick_restores_on_its_folder_after_a_kill() {
     }
     crate::file_browser::restore(&ctx, &app);
     assert!(app.global::<Shell>().get_transitioning());
-    crate::file_browser::land_now(
+    let page = live_page(
+        "/media/fat",
+        vec![
+            live_entry("directory", "/media/fat/_Arcade", "_Arcade", ""),
+            live_entry("directory", "/media/fat/_Favorites", "_Favorites", ""),
+        ],
+    );
+    crate::file_browser::land_core_now(
         &ctx,
         &app,
-        Some(&dir),
-        &root.join("_Favorites").to_string_lossy(),
+        &live_roots(),
+        Some(("/media/fat", Some(&page))),
+        "/media/fat/_Favorites",
     );
     let view = app.global::<crate::FileBrowserView>();
-    assert_eq!(view.get_current_index(), 1, "the folder it was on");
-    assert!(!view.get_has_menu(), "still a folder pick");
-    let _ = std::fs::remove_dir_all(&root);
+    assert_eq!(view.get_current_index(), 2, "the folder it was on");
+    assert!(!view.get_has_menu(), "still a Browse pick");
 }
 
 #[test]
