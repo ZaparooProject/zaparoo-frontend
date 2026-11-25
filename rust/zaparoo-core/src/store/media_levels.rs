@@ -48,8 +48,9 @@ impl Answer {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 struct Fsm {
     connected: bool,
-    /// What Core was last told and confirmed.
-    subscribed: bool,
+    /// What Core holds, as last confirmed. `None` after a failed request:
+    /// Core may or may not have applied it, so the next wish is sent.
+    subscribed: Option<bool>,
     unsupported: bool,
 }
 
@@ -59,13 +60,14 @@ impl Fsm {
     fn connection_changed(&mut self, connected: bool) {
         *self = Self {
             connected,
+            subscribed: Some(false),
             ..Self::default()
         };
     }
 
     /// What to tell Core now, if anything.
     fn next(self, wanted: bool) -> Option<bool> {
-        (self.connected && !self.unsupported && wanted != self.subscribed).then_some(wanted)
+        (self.connected && !self.unsupported && self.subscribed != Some(wanted)).then_some(wanted)
     }
 
     /// Core answered a request to set the subscription to `enabled`.
@@ -73,16 +75,19 @@ impl Fsm {
     fn answered(&mut self, enabled: bool, answer: Answer) -> bool {
         match answer {
             Answer::Done => {
-                self.subscribed = enabled;
+                self.subscribed = Some(enabled);
                 false
             }
             Answer::Unsupported => {
                 let first = !self.unsupported;
                 self.unsupported = true;
-                self.subscribed = false;
+                self.subscribed = Some(false);
                 first
             }
-            Answer::Failed => false,
+            Answer::Failed => {
+                self.subscribed = None;
+                false
+            }
         }
     }
 }
@@ -288,5 +293,21 @@ mod tests {
         fsm.answered(true, Answer::Done);
         fsm.answered(false, Answer::Failed);
         assert_eq!(fsm.next(false), Some(false), "an unsubscribe too");
+    }
+
+    #[test]
+    fn a_failed_request_leaves_core_unknown_whichever_way_the_wish_goes() {
+        let mut fsm = Fsm::default();
+        fsm.connection_changed(true);
+        fsm.answered(true, Answer::Done);
+        // The unsubscribe timed out, but Core may have applied it; the
+        // player reopened meanwhile, so subscribe again.
+        fsm.answered(false, Answer::Failed);
+        assert_eq!(fsm.next(true), Some(true));
+        fsm.answered(true, Answer::Done);
+        assert_eq!(fsm.next(true), None, "confirmed: nothing to send");
+        // The inverse: a subscribe that failed, then the player closed.
+        fsm.answered(true, Answer::Failed);
+        assert_eq!(fsm.next(false), Some(false));
     }
 }

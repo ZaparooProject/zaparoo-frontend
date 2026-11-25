@@ -71,8 +71,13 @@ pub struct SlotMedia {
 }
 
 impl SlotMedia {
-    /// Music is coming out of the speakers from this slot right now.
+    /// Music is coming out of the speakers from this slot right now. A
+    /// paused playlist wins over a track update that has not landed yet,
+    /// as the player's own controls read it.
     pub fn playing(&self) -> bool {
+        if self.playlist.as_ref().is_some_and(|p| !p.playing) {
+            return false;
+        }
         self.track.as_ref().is_some_and(|track| {
             track.playback_state != "paused" && track.playback_state != "stopped"
         })
@@ -448,7 +453,13 @@ mod tests {
     fn the_seed_keeps_each_music_slot() {
         let media = MediaResult {
             active: vec![track("primary", "playing"), track("background", "paused")],
-            playlists: vec![playlist("primary"), playlist("background")],
+            playlists: vec![
+                PlaylistState {
+                    playing: true,
+                    ..playlist("primary")
+                },
+                playlist("background"),
+            ],
             ..MediaResult::default()
         };
         let mut state = MusicMediaState::default();
@@ -530,6 +541,35 @@ mod tests {
         );
         state.set_track(MusicSlot::Primary, None);
         assert_eq!(state.shown_slot(), MusicSlot::Background);
+    }
+
+    #[test]
+    fn a_paused_primary_playlist_yields_to_background_music() {
+        let mut state = MusicMediaState {
+            background: SlotMedia {
+                track: Some(track("background", "playing")),
+                playlist: None,
+            },
+            ..MusicMediaState::default()
+        };
+        state.set_track(MusicSlot::Primary, Some(track("primary", "playing")));
+        let primary = PlaylistState {
+            playing: true,
+            ..playlist("primary")
+        };
+        assert!(state.apply_playlists(std::slice::from_ref(&primary)));
+        assert_eq!(state.shown_slot(), MusicSlot::Primary, "its playlist plays");
+        // Paused by playlists.changed before the track update arrives.
+        assert!(state.apply_playlists(&[PlaylistState {
+            playing: false,
+            ..primary
+        }]));
+        assert!(!state.primary.playing());
+        assert_eq!(
+            state.shown_slot(),
+            MusicSlot::Background,
+            "the background music is what is heard"
+        );
     }
 
     #[test]

@@ -816,9 +816,10 @@ impl Meter {
         self.levels.iter().all(|l| *l <= 0.0)
     }
 
-    /// Drop every bar at once, as when the player is left.
+    /// Drop every bar at once, as when the player is left. The heights the
+    /// view holds are kept, so the next `publish` writes the zeros.
     pub fn clear(&mut self) {
-        *self = Self::default();
+        self.levels = [0.0; LEVEL_BANDS];
     }
 
     /// The bars' heights in `steps` (`LEVEL_STEPS` for the view). Calls
@@ -1314,6 +1315,12 @@ mod tests {
         meter.republish();
         meter.publish(50, |_, _| writes += 1);
         assert_eq!(writes, 1 + LEVEL_BANDS, "a new model gets every band");
+        let mut heights = [-1; LEVEL_BANDS];
+        meter.clear();
+        assert!(meter.silent());
+        meter.publish(50, |i, h| heights[i] = h);
+        assert_eq!(heights[3], 0, "a cleared bar is written down");
+        assert!(heights.iter().enumerate().all(|(i, h)| i == 3 || *h == -1));
         assert!(level_fresh(LEVEL_STALE_MS));
         assert!(!level_fresh(LEVEL_STALE_MS + 1));
     }
