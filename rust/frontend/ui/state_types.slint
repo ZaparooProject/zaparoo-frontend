@@ -36,13 +36,15 @@ export enum FileBrowserMode { plain, images }
 // The Credits screen: its list of components, or one component's text.
 export enum CreditsPage { list, reading }
 // The music player: its pages (the player, the open playlist, the
-// library), the transport controls in row order, what the background slot
-// is doing, an open playlist's repeat mode, and why a control cannot act.
+// library), the transport controls in row order, what the slot on show
+// is doing, an open playlist's repeat mode, why a control cannot act, and
+// how the level visualizer draws.
 export enum MusicPage { player, playlist, library }
 export enum MusicControl { shuffle, previous, play-pause, next, repeat }
 export enum PlaybackState { stopped, playing, paused }
 export enum RepeatMode { off, all, one }
 export enum MusicUnavailable { none, nothing-playing, no-playlist, not-supported, starting }
+export enum VisualizerStyle { bars, mirror }
 // What "Search here" limited a search to: a folder, a system's top level,
 // a category's systems, or a built-in list (which one is named beside the
 // scope). `none` is an unscoped search.

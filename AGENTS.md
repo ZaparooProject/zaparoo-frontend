@@ -262,7 +262,7 @@ update rules, in short:
 | `rust/frontend/src/navigation.rs`, `folder_motion.rs`, `route_motion.rs` | Deferred routes that keep the source until the destination is ready; motion tests on a stepped clock |
 | `rust/frontend/src/{hub,systems,games,settings,about,credits}.rs` | Per-screen drivers (Credits reads the embedded `LICENSE.txt` through `zaparoo_app::credits`) |
 | `rust/frontend/src/{rename,file_browser}.rs` | Rename tile (shared keyboard) and the reusable file browser with its image-preview mode |
-| `rust/frontend/src/{music,music_layout}.rs` | The music player for Core's background slot (player and library pages, the once-a-second clock while music plays) and its geometry, shared with the CRT mirror and snapshots |
+| `rust/frontend/src/{music,music_layout}.rs` | The music player for Core's music slots, background and native audio on primary (player and library pages, the once-a-second clock while music plays, the level visualizer) and its geometry, shared with the CRT mirror and snapshots |
 | `rust/frontend/src/{launcher_prefs,retro_achievements,ra_login}.rs` | Core's global launcher preference modal; `MiSTer_RA`'s cfg and install check; the RetroAchievements login screen (masked password, checked with RetroAchievements before saving) |
 | `rust/frontend/src/{game_info,media_setup,log_upload,launchers,card_write,qr}.rs` | Modal drivers |
 | `rust/frontend/src/core_settings.rs` | The Settings rows that are Core's own: Readers and its pages, Profiles, System's pairing and security rows, Library's preferred game versions; the admin gate's page and row rules (`zaparoo_app::settings::gated_page`/`gated_row`) |

@@ -1010,6 +1010,19 @@ mod tests {
         assert!(idle["result"].is_null());
     }
 
+    #[tokio::test]
+    async fn media_levels_subscribe_answers_null() {
+        for enabled in [true, false] {
+            let req = serde_json::json!({
+                "jsonrpc": "2.0", "id": "1", "method": "media.levels.subscribe",
+                "params": { "enabled": enabled },
+            });
+            let resp = parse(&dispatch(&req.to_string()));
+            assert!(resp["error"].is_null());
+            assert!(resp["result"].is_null());
+        }
+    }
+
     #[test]
     fn readers_write_accepts_text_and_returns_null() {
         let req = r#"{"jsonrpc":"2.0","id":"1","method":"readers.write","params":{"text":"**launch.system:nes"}}"#;

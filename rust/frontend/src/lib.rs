@@ -1329,12 +1329,13 @@ fn bind_desktop_lifecycle(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
             // Core's Steam watcher reports every externally started Steam
             // game, and a frontend installed as a Steam shortcut is one of
             // them. Going dormant for our own launch would hide the UI
-            // behind its own launch face.
+            // behind its own launch face. Music on the primary slot (an
+            // album, an audio CD) plays under the frontend's own player.
             let active = ctx_media.store.client().is_local()
-                && snapshot
-                    .primary_active
-                    .as_ref()
-                    .is_some_and(|media| !steam::is_self_media(&media.media_path));
+                && snapshot.primary_active.as_ref().is_some_and(|media| {
+                    !steam::is_self_media(&media.media_path)
+                        && !zaparoo_core::media_types::is_native_audio(media)
+                });
             let resumed = was_active && !active;
             was_active = active;
             let ctx_event = ctx_media.clone();

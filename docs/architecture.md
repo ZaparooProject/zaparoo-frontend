@@ -30,9 +30,12 @@ rust/frontend/  [frontend library and binary; Slint UI]
   ├── src/{hub,systems,games,search,settings,about,update}.rs
   │                        per-screen drivers (update.rs hosts the Update
   │                        module's session; see "Update module")
-  ├── src/music.rs       : the music player for Core's background slot: the
-  │                        player and library pages, commands to Core, and
-  │                        the once-a-second clock while music plays
+  ├── src/music.rs       : the music player for Core's music slots (the
+  │                        background slot, and an album or audio CD on the
+  │                        primary slot, which opens it): the player and
+  │                        library pages, commands to Core, the
+  │                        once-a-second clock while music plays, and the
+  │                        level visualizer's frame
   ├── src/music_layout.rs : its geometry, shared with the CRT mirror and
   │                        the snapshot tool
   ├── src/controllers.rs : Core's controllers and Bluetooth: the header's
@@ -110,7 +113,7 @@ rust/zaparoo-app/  [toolkit-free product rules]
   form_list, system_picker        : cursor rules for sectioned lists, and the
                                     system list grouped by manufacturer
   music                           : the music player's controls, commands,
-                                    clock and geometry
+                                    clock, geometry and visualizer meter
   controllers                     : controller battery readings, the
                                     header's battery glyphs and low
                                     battery warning, names and their
@@ -132,14 +135,17 @@ rust/zaparoo-core/  [Core client and shared state]
   client.rs           : WebSocket JSON-RPC 2.0 (tokio-tungstenite)
   transport.rs        : Core endpoint: TCP, or a Unix socket with an API key
   remote_resource.rs  : RemoteResource<T>/ResourceStatus<T>
-  store/              : Endpoint, Mutation, Tag, Store cache, and three live
+  store/              : Endpoint, Mutation, Tag, Store cache, and live
                         watch resources: media status (database, scraper,
-                        primary slot), background media (the music
-                        track and the playlist open on Core's background
-                        slot, from `media`, `media.active` and
-                        `playlists.changed`), and the device (controllers
-                        and Bluetooth, from `device.status`,
-                        `device.changed` and `device.bluetooth.*`)
+                        primary slot), music media (the track and the
+                        playlist on Core's background slot and native
+                        audio on the primary slot, from `media`,
+                        `media.active` and `playlists.changed`), the
+                        `media.levels` subscription (on while a
+                        visualizer is on screen, renewed per connection),
+                        and the device (controllers and Bluetooth, from
+                        `device.status`, `device.changed` and
+                        `device.bluetooth.*`)
   device.rs           : `device.*` wire types
   endpoints/          : CatalogEndpoint, MediaSearchEndpoint, RunMutation
   systems_catalog.rs  : CatalogData payload + by-category filter

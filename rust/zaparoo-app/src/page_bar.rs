@@ -161,7 +161,12 @@ pub fn more_rows(surface: Surface) -> &'static [&'static str] {
             "deck_cover_remove",
             "deck_delete",
         ],
-        Surface::MusicPlayer => &["music_autoplay", "music_pause_games"],
+        Surface::MusicPlayer => &[
+            "music_autoplay",
+            "music_pause_games",
+            "music_visualizer",
+            "music_visualizer_style",
+        ],
         _ => &[],
     }
 }

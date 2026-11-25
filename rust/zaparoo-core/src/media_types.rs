@@ -1445,7 +1445,107 @@ pub fn is_background_slot(slot: &str) -> bool {
 /// Whether `slot` names the primary slot, where games run. Empty is
 /// Core's compatibility spelling for it.
 pub fn is_primary_slot(slot: &str) -> bool {
-    slot.is_empty() || slot.eq_ignore_ascii_case("primary")
+    slot.is_empty() || slot.eq_ignore_ascii_case(SLOT_PRIMARY)
+}
+
+/// The primary media slot, where games run and an album or audio CD
+/// plays in place of one.
+pub const SLOT_PRIMARY: &str = "primary";
+
+/// Core's in-process audio player: music files, audio CD tracks and cue
+/// sheets. It plays without taking the screen.
+pub const NATIVE_AUDIO_LAUNCHER: &str = "native-audio";
+
+/// The system Core files native audio under.
+const AUDIO_SYSTEM: &str = "Audio";
+
+/// Whether `media` is native audio: music that plays while the frontend
+/// stays on screen. A `media.started` push carries no launcher, so one
+/// on the Audio system without a launcher counts as well.
+pub fn is_native_audio(media: &ActiveMediaInfo) -> bool {
+    if media.launcher_id.is_empty() {
+        return media.system_id.eq_ignore_ascii_case(AUDIO_SYSTEM);
+    }
+    media.launcher_id == NATIVE_AUDIO_LAUNCHER
+}
+
+/// How many bands a `media.levels` reading has: log-spaced from 40 Hz to
+/// 16 kHz, lowest first.
+pub const LEVEL_BANDS: usize = 16;
+
+/// One slot's latest `media.levels` reading. Plain data, copied out of
+/// the client's channel without allocating.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct SlotLevels {
+    /// Bumped with each reading, so a reader can tell a new one from the
+    /// last it saw. Zero is none since the connection opened.
+    pub seq: u64,
+    pub peak: f32,
+    pub bands: [f32; LEVEL_BANDS],
+}
+
+/// The latest levels of both slots.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct MediaLevels {
+    pub primary: SlotLevels,
+    pub background: SlotLevels,
+}
+
+impl MediaLevels {
+    /// The slot named `slot`; anything not background is primary.
+    pub fn slot(&self, slot: &str) -> &SlotLevels {
+        if is_background_slot(slot) {
+            &self.background
+        } else {
+            &self.primary
+        }
+    }
+
+    /// Fold one `media.levels` push in. Values are clamped to 0..1 and
+    /// missing bands read as zero. Returns false, changing nothing, when
+    /// the push names no known slot or carries no bands.
+    pub fn apply(&mut self, params: &serde_json::Value) -> bool {
+        let Some(slot) = params.get("slot").and_then(serde_json::Value::as_str) else {
+            return false;
+        };
+        let target = if is_background_slot(slot) {
+            &mut self.background
+        } else if is_primary_slot(slot) {
+            &mut self.primary
+        } else {
+            return false;
+        };
+        let Some(bands) = params.get("bands").and_then(serde_json::Value::as_array) else {
+            return false;
+        };
+        for (i, band) in target.bands.iter_mut().enumerate() {
+            *band = unit_level(bands.get(i));
+        }
+        target.peak = unit_level(params.get("peak"));
+        target.seq = target.seq.wrapping_add(1).max(1);
+        true
+    }
+}
+
+/// A level off the wire, kept within 0..1; anything else is silence.
+fn unit_level(value: Option<&serde_json::Value>) -> f32 {
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "a level is 0..1, and f32 holds it finely enough to draw"
+    )]
+    let value = value.and_then(serde_json::Value::as_f64).unwrap_or(0.0) as f32;
+    if value.is_finite() {
+        value.clamp(0.0, 1.0)
+    } else {
+        0.0
+    }
+}
+
+/// `media.levels.subscribe`: turn the `media.levels` push on or off for
+/// this connection.
+#[derive(Debug, Clone, Copy, Default, Serialize)]
+pub struct MediaLevelsSubscribeParams {
+    pub enabled: bool,
 }
 
 /// A native audio track's tags, as Core read them from the file. Every
@@ -2332,6 +2432,50 @@ mod tests {
         clippy::panic,
         reason = "tests should fail-fast on unexpected errors"
     )]
+
+    #[test]
+    fn a_levels_push_lands_on_its_slot_clamped() {
+        let mut levels = super::MediaLevels::default();
+        let mut bands = vec![0.5; 15];
+        bands[0] = 1.5;
+        bands[1] = -0.2;
+        assert!(levels.apply(&serde_json::json!({
+            "slot": "primary", "peak": 0.75, "bands": bands
+        })));
+        assert_eq!(levels.primary.seq, 1);
+        assert!((levels.primary.peak - 0.75).abs() < f32::EPSILON);
+        assert!((levels.primary.bands[0] - 1.0).abs() < f32::EPSILON);
+        assert!(levels.primary.bands[1].abs() < f32::EPSILON);
+        assert!((levels.primary.bands[2] - 0.5).abs() < f32::EPSILON);
+        assert!(
+            levels.primary.bands[15].abs() < f32::EPSILON,
+            "a missing band is silence"
+        );
+        assert_eq!(levels.background, super::SlotLevels::default());
+        assert!(levels.apply(&serde_json::json!({
+            "slot": "background", "peak": 0.1, "bands": [0.2]
+        })));
+        assert_eq!(levels.background.seq, 1);
+        assert_eq!(levels.slot("bg").seq, 1);
+        assert_eq!(levels.slot("").seq, 1);
+        assert!(!levels.apply(&serde_json::json!({ "slot": "other", "bands": [] })));
+        assert!(!levels.apply(&serde_json::json!({ "slot": "primary" })));
+        assert_eq!(levels.primary.seq, 1, "a bad push changes nothing");
+    }
+
+    #[test]
+    fn native_audio_is_told_by_launcher_or_the_audio_system() {
+        let media = |launcher: &str, system: &str| super::ActiveMediaInfo {
+            launcher_id: launcher.to_string(),
+            system_id: system.to_string(),
+            ..super::ActiveMediaInfo::default()
+        };
+        assert!(super::is_native_audio(&media("native-audio", "Audio")));
+        assert!(super::is_native_audio(&media("", "Audio")));
+        assert!(!super::is_native_audio(&media("PSXCDPlayer", "Audio")));
+        assert!(!super::is_native_audio(&media("", "PSX")));
+        assert!(!super::is_native_audio(&media("Steam", "PC")));
+    }
 
     #[test]
     fn similar_games_carry_their_reasons() {

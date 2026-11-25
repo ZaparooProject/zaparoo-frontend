@@ -13668,13 +13668,34 @@ fn core_loaders_and_notices_take_the_header_line() {
 }
 
 /// A background slot with a two-track playlist, the second track playing.
-fn music_state(playing: bool) -> zaparoo_core::store::BackgroundMediaState {
-    use zaparoo_core::media_types::{ActiveMediaInfo, PlaylistItem, PlaylistState};
-    zaparoo_core::store::BackgroundMediaState {
+fn music_state(playing: bool) -> zaparoo_core::store::MusicMediaState {
+    zaparoo_core::store::MusicMediaState {
         seeded: true,
         pushes_playback: false,
+        background: music_slot("background", playing),
+        primary: zaparoo_core::store::SlotMedia::default(),
+    }
+}
+
+/// The same album playing natively on the primary slot, the background
+/// slot idle.
+fn primary_music_state(playing: bool) -> zaparoo_core::store::MusicMediaState {
+    zaparoo_core::store::MusicMediaState {
+        seeded: true,
+        pushes_playback: true,
+        background: zaparoo_core::store::SlotMedia::default(),
+        primary: music_slot("primary", playing),
+    }
+}
+
+/// A slot with a two-track playlist, the second track playing.
+fn music_slot(slot: &str, playing: bool) -> zaparoo_core::store::SlotMedia {
+    use zaparoo_core::media_types::{ActiveMediaInfo, PlaylistItem, PlaylistState};
+    zaparoo_core::store::SlotMedia {
         track: Some(ActiveMediaInfo {
-            slot: "background".into(),
+            slot: slot.into(),
+            system_id: "Audio".into(),
+            launcher_id: "native-audio".into(),
             media_path: "/m/2.mp3".into(),
             media_name: "Two".into(),
             playback_state: if playing { "playing" } else { "paused" }.into(),
@@ -13690,7 +13711,7 @@ fn music_state(playing: bool) -> zaparoo_core::store::BackgroundMediaState {
         playlist: Some(std::sync::Arc::new(PlaylistState {
             id: "/m".into(),
             name: "Mix".into(),
-            slot: "background".into(),
+            slot: slot.into(),
             repeat: "all".into(),
             items: vec![
                 PlaylistItem {
@@ -13738,6 +13759,61 @@ fn a_pinned_music_tile_returns_to_the_hub() {
     );
 }
 
+/// An album or audio CD starting on the primary slot opens the player
+/// from the Hub, shows its tags, and controls that slot.
+#[test]
+fn music_starting_on_the_primary_slot_opens_the_player() {
+    assert!(slint::platform::set_platform(Box::new(ProbePlatform)).is_ok());
+    let (app, window) = boot();
+    let (_runtime, ctx) = offline_ctx();
+    app.global::<crate::Motion>().set_enabled(false);
+    let shell = app.global::<Shell>();
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+    // Background music already heard: it does not take the screen.
+    crate::music::media_changed(&ctx, &app, music_state(true));
+    settle(&window);
+    assert_eq!(shell.get_active_screen(), Screen::Hub);
+
+    let mut state = primary_music_state(true);
+    if let Some(track) = state.primary.track.as_mut() {
+        track.track = Some(zaparoo_core::media_types::TrackInfo {
+            title: "Track Two".into(),
+            artist: "The Band".into(),
+            album: "Disc".into(),
+            ..zaparoo_core::media_types::TrackInfo::default()
+        });
+    }
+    crate::music::media_changed(&ctx, &app, state.clone());
+    settle(&window);
+    assert_eq!(shell.get_active_screen(), Screen::Music);
+    let view = app.global::<crate::MusicView>();
+    assert!(view.get_primary(), "the primary slot is the one shown");
+    assert_eq!(view.get_title(), "Track Two");
+    assert_eq!(view.get_artist(), "The Band");
+    assert_eq!(view.get_album(), "Disc");
+    assert_eq!(view.get_playback(), crate::PlaybackState::Playing);
+
+    // The visualizer's bars are a fixed row, down until Core's feed speaks.
+    assert_eq!(Model::row_count(&view.get_levels()), 16);
+    assert!(!view.get_visualizer_on());
+    assert_eq!(view.get_visualizer_style(), crate::VisualizerStyle::Bars);
+    crate::music::page_action(&ctx, &app, "music_visualizer_style", true);
+    assert_eq!(view.get_visualizer_style(), crate::VisualizerStyle::Mirror);
+    crate::music::page_action(&ctx, &app, "music_visualizer", true);
+    {
+        let shared = crate::router::lock(&ctx.shared);
+        assert!(!shared.persist.settings.music_visualizer);
+        assert_eq!(shared.persist.settings.music_visualizer_style, "mirror");
+    }
+
+    // A later answer about the same album does not reopen anything; the
+    // player stays on the primary slot while it plays.
+    crate::music::media_changed(&ctx, &app, state);
+    settle(&window);
+    assert_eq!(shell.get_active_screen(), Screen::Music);
+    assert!(view.get_primary());
+}
+
 /// The background slot drives the player and the header's music note; the
 /// focus walks the transport row into the playlist and back.
 #[test]
@@ -13747,7 +13823,7 @@ fn the_player_follows_the_background_slot_and_walks_into_the_playlist() {
     let (_runtime, ctx) = offline_ctx();
     app.global::<crate::Motion>().set_enabled(false);
     crate::music::enter(&ctx, &app);
-    crate::music::background_changed(&ctx, &app, music_state(true));
+    crate::music::media_changed(&ctx, &app, music_state(true));
     settle(&window);
     let view = app.global::<crate::MusicView>();
     assert!(view.get_has_track());
@@ -13803,17 +13879,17 @@ fn the_player_follows_the_background_slot_and_walks_into_the_playlist() {
 
     // The marker follows the track when only the playlist index changes.
     let mut first = music_state(true);
-    if let Some(list) = first.playlist.as_mut() {
+    if let Some(list) = first.background.playlist.as_mut() {
         std::sync::Arc::make_mut(list).index = 0;
     }
-    crate::music::background_changed(&ctx, &app, first);
+    crate::music::media_changed(&ctx, &app, first);
     let marked: Vec<bool> = view.get_list_rows().iter().map(|r| r.now_playing).collect();
     assert_eq!(
         marked,
         vec![true, false],
         "the marker moved to the new track"
     );
-    crate::music::background_changed(&ctx, &app, music_state(true));
+    crate::music::media_changed(&ctx, &app, music_state(true));
 
     // Back returns to the player with its control kept.
     crate::router::handle_action(&ctx, &app, "cancel");
@@ -13821,7 +13897,7 @@ fn the_player_follows_the_background_slot_and_walks_into_the_playlist() {
     assert_eq!(view.get_control_index(), 2);
 
     // Pausing shows at once and clears the header's note.
-    crate::music::background_changed(&ctx, &app, music_state(false));
+    crate::music::media_changed(&ctx, &app, music_state(false));
     assert_eq!(view.get_playback(), crate::PlaybackState::Paused);
     assert!(!app.global::<Shell>().get_music_playing());
 }
@@ -13896,7 +13972,7 @@ fn a_track_change_updates_the_card() {
     app.global::<crate::Motion>().set_enabled(false);
     crate::music::enter(&ctx, &app);
     let mut state = music_state(true);
-    if let Some(track) = state.track.as_mut() {
+    if let Some(track) = state.background.track.as_mut() {
         track.track = Some(TrackInfo {
             title: "Two".into(),
             artist: "Artist A".into(),
@@ -13904,7 +13980,7 @@ fn a_track_change_updates_the_card() {
             ..TrackInfo::default()
         });
     }
-    crate::music::background_changed(&ctx, &app, state);
+    crate::music::media_changed(&ctx, &app, state);
     settle(&window);
     let view = app.global::<crate::MusicView>();
     assert_eq!(view.get_title(), "Two");
@@ -13914,7 +13990,7 @@ fn a_track_change_updates_the_card() {
 
     // Core moves on to the first item: a new track, a new index.
     let mut next = music_state(true);
-    if let Some(track) = next.track.as_mut() {
+    if let Some(track) = next.background.track.as_mut() {
         track.media_path = "/m/1.mp3".into();
         track.media_name = "One".into();
         track.track = Some(TrackInfo {
@@ -13924,10 +14000,10 @@ fn a_track_change_updates_the_card() {
             ..TrackInfo::default()
         });
     }
-    if let Some(list) = next.playlist.as_mut() {
+    if let Some(list) = next.background.playlist.as_mut() {
         std::sync::Arc::make_mut(list).index = 0;
     }
-    crate::music::background_changed(&ctx, &app, next);
+    crate::music::media_changed(&ctx, &app, next);
     settle(&window);
     assert_eq!(view.get_title(), "One");
     assert_eq!(view.get_artist(), "Artist B");
@@ -14028,7 +14104,7 @@ fn without_a_chip_row_the_menu_list_holds_the_volume_slider() {
     app.global::<crate::Motion>().set_enabled(false);
     crate::sizing::apply_scene(&app, crate::sizing::Scene::of(&app, 352.0, 240.0, false));
     crate::music::enter(&ctx, &app);
-    crate::music::background_changed(&ctx, &app, music_state(true));
+    crate::music::media_changed(&ctx, &app, music_state(true));
     crate::router::lock(&ctx.shared).music_settings_for_test(Some(70));
     settle(&window);
     assert!(!app.global::<Sizing>().get_menu_row());
@@ -14087,7 +14163,7 @@ fn the_volume_chip_opens_the_slider_on_its_own() {
     crate::music::enter(&ctx, &app);
     crate::router::lock(&ctx.shared).music_settings_for_test(Some(70));
     // The chip shows once Core's settings are known, at the next render.
-    crate::music::background_changed(&ctx, &app, music_state(true));
+    crate::music::media_changed(&ctx, &app, music_state(true));
     settle(&window);
     crate::router::handle_action(&ctx, &app, "page_menu");
     let ids = crate::page_bar::chip_ids(&app);

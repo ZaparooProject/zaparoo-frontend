@@ -5,8 +5,10 @@
 //! The music player's rules: the transport row and what each control
 //! sends to Core, which of them can act right now and why not, the
 //! `ZapScript` that starts a folder, the playback clock the progress bar
-//! reads between Core's answers, and the player's geometry. Core's
-//! background slot is the only slot it drives.
+//! reads between Core's answers, the player's geometry, and the level
+//! visualizer over the art. The player drives the slot it shows: the
+//! background slot, or the primary slot while music plays there; music
+//! the library starts goes to the background slot.
 //!
 //! The row is the one players share (Apple Music, Spotify): Shuffle,
 //! Previous, Play/Pause, Next, Repeat. Stop is a Menu row, and the open
@@ -17,8 +19,18 @@ use std::fmt::Write as _;
 use crate::sizing::{Derived, Tier};
 use crate::zapscript::escape_arg;
 
-/// The `ZapScript` suffix every music command carries.
+/// The `ZapScript` suffix a background slot command carries.
 pub const SLOT_ARG: &str = "slot=background";
+/// The suffix a primary slot command carries.
+pub const PRIMARY_SLOT_ARG: &str = "slot=primary";
+
+fn slot_arg(primary: bool) -> &'static str {
+    if primary {
+        PRIMARY_SLOT_ARG
+    } else {
+        SLOT_ARG
+    }
+}
 
 /// How often the time text and the progress bar move while music plays.
 pub const TICK_MS: u64 = 1000;
@@ -186,7 +198,7 @@ pub enum Unavailable {
     Starting,
 }
 
-/// What the player knows about the background slot, enough to decide
+/// What the player knows about the music slot it shows, enough to decide
 /// every control.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[allow(
@@ -208,6 +220,8 @@ pub struct Now {
     pub repeat: Repeat,
     /// A track this player asked for is still starting (`TrackStart`).
     pub starting: bool,
+    /// The slot is Core's primary slot rather than the background one.
+    pub primary: bool,
 }
 
 impl Now {
@@ -318,17 +332,17 @@ impl TrackStart {
 pub enum Command {
     /// `ZapScript` through `run`.
     Run(String),
-    /// `media.control` on the background slot.
+    /// `media.control` on the slot on show.
     Control(&'static str),
-    /// `playlists.update` on the background slot.
+    /// `playlists.update` on the slot on show.
     Update {
         shuffle: Option<bool>,
         repeat: Option<Repeat>,
     },
 }
 
-fn playlist_command(name: &str) -> Command {
-    Command::Run(format!("**playlist.{name}?{SLOT_ARG}"))
+fn playlist_command(name: &str, now: &Now) -> Command {
+    Command::Run(format!("**playlist.{name}?{}", slot_arg(now.primary)))
 }
 
 /// What pressing `control` sends, or `None` when it cannot act. Play and
@@ -341,7 +355,7 @@ pub fn transport_command(control: Control, now: &Now) -> Option<Command> {
     Some(match control {
         Control::PlayPause if now.has_playlist => {
             if now.playing() {
-                playlist_command("pause")
+                playlist_command("pause", now)
             } else if now.playlist_playing
                 && now.playback == Playback::Paused
                 && now.offers("toggle_pause")
@@ -352,12 +366,12 @@ pub fn transport_command(control: Control, now: &Now) -> Option<Command> {
             } else {
                 // With no argument, play resumes the open playlist. Sent
                 // only while it is paused: on a playing one it skips.
-                playlist_command("play")
+                playlist_command("play", now)
             }
         }
         Control::PlayPause => Command::Control("toggle_pause"),
-        Control::Previous => playlist_command("previous"),
-        Control::Next => playlist_command("next"),
+        Control::Previous => playlist_command("previous", now),
+        Control::Next => playlist_command("next", now),
         Control::Shuffle => Command::Update {
             shuffle: Some(!now.shuffle),
             repeat: None,
@@ -373,7 +387,7 @@ pub fn transport_command(control: Control, now: &Now) -> Option<Command> {
 /// is idle.
 pub fn stop_command(now: &Now) -> Option<Command> {
     if now.has_playlist {
-        Some(playlist_command("stop"))
+        Some(playlist_command("stop", now))
     } else if now.has_track {
         Some(Command::Control("stop"))
     } else {
@@ -399,12 +413,13 @@ pub fn up_next(index: usize, total: usize, repeat: Repeat) -> Option<usize> {
 /// Jump to playlist item `index` (counted from 0) and play it. A paused
 /// playlist only moves its place on `goto`, so it is resumed after; a
 /// playing one launches the item itself, and `play` there would skip it.
-pub fn goto_script(index: usize, playing: bool) -> String {
-    let goto = format!("**playlist.goto:{}?{SLOT_ARG}", index + 1);
+pub fn goto_script(index: usize, playing: bool, primary: bool) -> String {
+    let slot = slot_arg(primary);
+    let goto = format!("**playlist.goto:{}?{slot}", index + 1);
     if playing {
         goto
     } else {
-        format!("{goto}||**playlist.play?{SLOT_ARG}")
+        format!("{goto}||**playlist.play?{slot}")
     }
 }
 
@@ -678,6 +693,164 @@ pub fn volume_step(current: i32, forward: bool) -> i32 {
     }
 }
 
+// ---------- Visualizer ----------
+
+/// The bands in Core's level feed, lowest first.
+pub const LEVEL_BANDS: usize = 16;
+/// How often the visualizer draws while it moves: about Core's own rate,
+/// so each reading is drawn once and readings between draws are skipped.
+pub const VISUALIZER_FRAME_MS: u64 = 33;
+/// A reading this old is silence: Core stops the feed while paused or
+/// stopped, and the bars fall rather than freeze.
+pub const LEVEL_STALE_MS: u64 = 200;
+/// How fast a bar falls, in full heights per second. It rises at once.
+pub const LEVEL_FALL_PER_SECOND: f32 = 2.5;
+/// The steps a bar's height is drawn in: coarse enough that a frame
+/// rewrites only the bars that visibly moved.
+pub const LEVEL_STEPS: i32 = 32;
+
+/// How the visualizer draws the bands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum VisualizerStyle {
+    /// Bars rising from the bottom of the art.
+    #[default]
+    Bars,
+    /// Bars growing out of the middle of the art, up and down alike.
+    Mirror,
+}
+
+impl VisualizerStyle {
+    pub const ALL: [Self; 2] = [Self::Bars, Self::Mirror];
+
+    /// The persisted token. Anything unknown reads as `Bars`.
+    pub fn parse(token: &str) -> Self {
+        match token {
+            "mirror" => Self::Mirror,
+            _ => Self::Bars,
+        }
+    }
+
+    pub fn token(self) -> &'static str {
+        match self {
+            Self::Bars => "bars",
+            Self::Mirror => "mirror",
+        }
+    }
+
+    /// The next style, as a Menu row cycles them.
+    #[must_use]
+    pub fn next(self) -> Self {
+        match self {
+            Self::Bars => Self::Mirror,
+            Self::Mirror => Self::Bars,
+        }
+    }
+}
+
+/// The bars inside the art box, in whole pixels relative to its corner.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VisualizerGeometry {
+    /// The first bar's left edge.
+    pub x: i32,
+    /// The bars' area, top and height.
+    pub y: i32,
+    pub height: i32,
+    pub bar_width: i32,
+    /// One bar and the gap after it.
+    pub pitch: i32,
+}
+
+/// Spread the bands across an art box `size` square: a margin all round,
+/// whole-pixel bars two thirds of their pitch, the row centered. At 240p
+/// the box is small and a bar may be a single pixel.
+pub fn visualizer_geometry(size: i32) -> VisualizerGeometry {
+    let size = size.max(0);
+    let margin = size / 12;
+    let inner = (size - 2 * margin).max(0);
+    let bands = LEVEL_BANDS as i32;
+    let pitch = (inner / bands).max(1);
+    let bar_width = (pitch * 2 / 3).max(1);
+    let row = pitch * bands - (pitch - bar_width);
+    VisualizerGeometry {
+        x: margin + (inner - row).max(0) / 2,
+        y: margin,
+        height: inner,
+        bar_width,
+        pitch,
+    }
+}
+
+/// The bars as drawn: each band's level, falling between readings, and
+/// the pixel heights last handed to the view. Fixed size, so a frame
+/// allocates nothing.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Meter {
+    levels: [f32; LEVEL_BANDS],
+    heights: [i32; LEVEL_BANDS],
+}
+
+impl Meter {
+    /// One frame `elapsed_ms` after the last: each bar jumps up to its
+    /// reading, or falls toward it. `None` is silence. Returns whether
+    /// any band's level moved.
+    pub fn step(&mut self, reading: Option<&[f32; LEVEL_BANDS]>, elapsed_ms: u64) -> bool {
+        #[allow(
+            clippy::cast_precision_loss,
+            reason = "a frame lasts milliseconds; f32 holds them exactly"
+        )]
+        let fall = LEVEL_FALL_PER_SECOND * elapsed_ms.min(1000) as f32 / 1000.0;
+        let mut moved = false;
+        for (i, level) in self.levels.iter_mut().enumerate() {
+            let target = reading.map_or(0.0, |r| r[i].clamp(0.0, 1.0));
+            let next = target.max(*level - fall).max(0.0);
+            if next.to_bits() != level.to_bits() {
+                *level = next;
+                moved = true;
+            }
+        }
+        moved
+    }
+
+    /// Every bar is down.
+    pub fn silent(&self) -> bool {
+        self.levels.iter().all(|l| *l <= 0.0)
+    }
+
+    /// Drop every bar at once, as when the player is left.
+    pub fn clear(&mut self) {
+        *self = Self::default();
+    }
+
+    /// The bars' heights in `steps` (`LEVEL_STEPS` for the view). Calls
+    /// `changed(band, height)` for each band whose height differs from the
+    /// last call, so the view is written only where a bar moved.
+    pub fn publish(&mut self, steps: i32, mut changed: impl FnMut(usize, i32)) {
+        #[allow(
+            clippy::cast_precision_loss,
+            clippy::cast_possible_truncation,
+            reason = "a pixel height is small; rounding is the intent"
+        )]
+        for (i, (level, drawn)) in self.levels.iter().zip(self.heights.iter_mut()).enumerate() {
+            let px = (level * steps.max(0) as f32).round() as i32;
+            if px != *drawn {
+                *drawn = px;
+                changed(i, px);
+            }
+        }
+    }
+
+    /// Forget what the view was given, so the next `publish` writes every
+    /// band (a new view model).
+    pub fn republish(&mut self) {
+        self.heights = [-1; LEVEL_BANDS];
+    }
+}
+
+/// Whether a reading `age_ms` old still counts, or the feed has stopped.
+pub fn level_fresh(age_ms: u64) -> bool {
+    age_ms <= LEVEL_STALE_MS
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used, reason = "tests should fail fast")]
 mod tests {
@@ -729,6 +902,7 @@ mod tests {
             shuffle: false,
             repeat: Repeat::All,
             starting: false,
+            primary: false,
         }
     }
 
@@ -789,6 +963,19 @@ mod tests {
         assert_eq!(
             stop_command(&now),
             Some(Command::Run("**playlist.stop?slot=background".into()))
+        );
+        let album = Now {
+            primary: true,
+            ..playlist_now()
+        };
+        assert_eq!(
+            transport_command(Control::Next, &album),
+            Some(Command::Run("**playlist.next?slot=primary".into())),
+            "an album on the primary slot is driven there"
+        );
+        assert_eq!(
+            stop_command(&album),
+            Some(Command::Run("**playlist.stop?slot=primary".into()))
         );
     }
 
@@ -892,10 +1079,21 @@ mod tests {
 
     #[test]
     fn goto_counts_from_one() {
-        assert_eq!(goto_script(0, true), "**playlist.goto:1?slot=background");
-        assert_eq!(goto_script(4, true), "**playlist.goto:5?slot=background");
         assert_eq!(
-            goto_script(2, false),
+            goto_script(0, true, false),
+            "**playlist.goto:1?slot=background"
+        );
+        assert_eq!(
+            goto_script(4, true, false),
+            "**playlist.goto:5?slot=background"
+        );
+        assert_eq!(
+            goto_script(2, false, true),
+            "**playlist.goto:3?slot=primary||**playlist.play?slot=primary",
+            "an album on the primary slot moves there"
+        );
+        assert_eq!(
+            goto_script(2, false, false),
             "**playlist.goto:3?slot=background||**playlist.play?slot=background",
             "a paused playlist is resumed on the new item"
         );
@@ -1040,5 +1238,83 @@ mod tests {
                 "{w}x{h}: the art is as tall as the text beside it at every tier"
             );
         }
+    }
+
+    #[test]
+    fn visualizer_styles_round_trip_and_cycle() {
+        for style in VisualizerStyle::ALL {
+            assert_eq!(VisualizerStyle::parse(style.token()), style);
+        }
+        assert_eq!(VisualizerStyle::parse(""), VisualizerStyle::Bars);
+        assert_eq!(VisualizerStyle::parse("lasers"), VisualizerStyle::Bars);
+        assert_eq!(VisualizerStyle::Bars.next(), VisualizerStyle::Mirror);
+        assert_eq!(VisualizerStyle::Mirror.next(), VisualizerStyle::Bars);
+    }
+
+    #[test]
+    fn the_bars_fit_the_art_box_at_every_size() {
+        for size in [0, 10, 30, 46, 80, 160, 400] {
+            let g = visualizer_geometry(size);
+            let bands = LEVEL_BANDS as i32;
+            let right = g.x + g.pitch * (bands - 1) + g.bar_width;
+            assert!(g.bar_width >= 1 && g.bar_width <= g.pitch, "size {size}");
+            assert!(g.x >= 0 && g.y >= 0, "size {size}");
+            if size >= 2 * bands {
+                assert!(right <= size, "size {size}: {g:?}");
+                assert_eq!(g.y + g.height + g.y, size, "even margins at {size}");
+            }
+        }
+        let g = visualizer_geometry(160);
+        assert_eq!(g.pitch, 8);
+        assert_eq!(g.bar_width, 5);
+    }
+
+    #[test]
+    fn a_bar_rises_at_once_and_falls_back_over_time() {
+        let mut meter = Meter::default();
+        assert!(meter.silent());
+        let mut reading = [0.0_f32; LEVEL_BANDS];
+        reading[0] = 1.0;
+        reading[15] = 2.0;
+        assert!(meter.step(Some(&reading), 33));
+        let mut heights = [0; LEVEL_BANDS];
+        meter.publish(100, |i, h| heights[i] = h);
+        assert_eq!(heights[0], 100, "up at once");
+        assert_eq!(heights[15], 100, "clamped to full");
+        assert_eq!(heights[1], 0);
+        // A lower reading: the bar falls toward it rather than dropping.
+        reading[0] = 0.1;
+        meter.step(Some(&reading), 100);
+        meter.publish(100, |i, h| heights[i] = h);
+        assert_eq!(heights[0], 75, "a quarter of the way in 100 ms");
+        // The feed stopped: everything falls to nothing and stays there.
+        for _ in 0..20 {
+            meter.step(None, 33);
+        }
+        assert!(meter.silent());
+        assert!(!meter.step(None, 33), "nothing left to move");
+    }
+
+    #[test]
+    fn publish_writes_only_the_bars_that_moved() {
+        let mut meter = Meter::default();
+        let mut writes = 0;
+        meter.publish(50, |_, _| writes += 1);
+        assert_eq!(writes, 0, "a fresh meter matches an empty view");
+        let mut reading = [0.0_f32; LEVEL_BANDS];
+        reading[3] = 0.5;
+        meter.step(Some(&reading), 33);
+        meter.publish(50, |i, h| {
+            writes += 1;
+            assert_eq!((i, h), (3, 25));
+        });
+        assert_eq!(writes, 1);
+        meter.publish(50, |_, _| writes += 1);
+        assert_eq!(writes, 1, "unchanged: nothing written");
+        meter.republish();
+        meter.publish(50, |_, _| writes += 1);
+        assert_eq!(writes, 1 + LEVEL_BANDS, "a new model gets every band");
+        assert!(level_fresh(LEVEL_STALE_MS));
+        assert!(!level_fresh(LEVEL_STALE_MS + 1));
     }
 }
