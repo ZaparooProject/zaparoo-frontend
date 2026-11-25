@@ -201,6 +201,10 @@ export global Shell {
     in-out property <int> battery-percent: 0;
     // Core's active profile name; empty for the shared profile.
     in-out property <string> profile-name: "";
+    // Playtime left before a limit stops play (`crate::playtime`);
+    // minutes -1 hides it.
+    in-out property <int> playtime-hours: 0;
+    in-out property <int> playtime-minutes: -1;
     // Cold-launch curtain. `boot-curtain` is true from the first frame
     // until the restored screen is complete, so a start shows the
     // curtain and then that screen, never a parent or a half-filled
@@ -4914,6 +4918,8 @@ export component App inherits Window {
         has-battery: Shell.has-battery;
         battery-percent: Shell.battery-percent;
         profile-name: Shell.profile-name;
+        playtime-hours: Shell.playtime-hours;
+        playtime-minutes: Shell.playtime-minutes;
         browse-title: root.browse-header-title();
         // The curtain carries its own cue; a restore filling beneath it
         // does not add a second one here.

@@ -63,7 +63,7 @@ tokens!(ErrorKind {
     Pairing => "pairing", Online => "online", Backup => "backup", LocalBackup => "local_backup",
     ConfigFile => "config_file",
     ImagePicker => "image_picker", Music => "music", Bluetooth => "bluetooth",
-    Mapping => "mapping",
+    Mapping => "mapping", PlaytimeExtend => "playtime_extend",
 });
 
 impl From<zaparoo_app::branding::HeaderLogo> for crate::HeaderLogo {
@@ -265,6 +265,10 @@ impl From<zaparoo_app::status_line::Kind> for crate::StatusKind {
             Kind::ImportFailed => Self::ImportFailed,
             Kind::Imported => Self::Imported,
             Kind::PlaytimeWarning => Self::PlaytimeWarning,
+            Kind::PlaytimeSessionReached => Self::PlaytimeSessionReached,
+            Kind::PlaytimeDailyReached => Self::PlaytimeDailyReached,
+            Kind::PlaytimeExtended => Self::PlaytimeExtended,
+            Kind::PlaytimeWaived => Self::PlaytimeWaived,
             Kind::Inbox => Self::Inbox,
             Kind::CoreLoader => Self::CoreLoader,
             Kind::CoreNotice => Self::CoreNotice,

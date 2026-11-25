@@ -695,12 +695,15 @@ fn profile_edit_rows(inputs: &Inputs) -> Vec<Row> {
 }
 
 /// Playtime limits: the switch, the limits every profile inherits while
-/// it is on, and whether a profile must be picked to play at all.
+/// it is on, extra time for the session being limited now (a profile's
+/// own limits can apply with the switch off), and whether a profile must
+/// be picked to play at all.
 fn playtime_limit_rows(inputs: &Inputs) -> Vec<Row> {
     let mut rows = vec![field("playtimeEnabled")];
     if inputs.playtime_enabled {
         rows.extend([field("playtimeDaily"), field("playtimeSession")]);
     }
+    rows.push(field(crate::playtime::EXTRA_TIME_ROW));
     rows.push(field("profilesRequireForLaunch"));
     rows
 }
@@ -935,6 +938,7 @@ pub fn options(id: &str, inputs: &Inputs) -> Option<Vec<&'static str>> {
         "profileLimits" => PROFILE_LIMIT_MODES,
         "profileDailyLimit" | "profileSessionLimit" => PROFILE_PLAYTIME_LIMITS,
         "playtimeDaily" | "playtimeSession" => PLAYTIME_LIMITS,
+        crate::playtime::EXTRA_TIME_ROW => &crate::playtime::EXTRA_TIME,
         "gameBackground" => crate::background::GAME_BACKGROUND_TYPES,
         "backgroundListStyle" => crate::background::LIST_STYLES,
         "headerLogo" => crate::branding::HEADER_LOGOS,
@@ -1201,9 +1205,15 @@ pub fn debug_logging_on(frontend: bool, core: Option<bool>) -> bool {
 /// Fractions of a minute round to the nearest one. Anything else is
 /// `None`.
 pub fn duration_minutes(value: &str) -> Option<u64> {
+    duration_seconds(value).map(|seconds| (seconds / 60.0).round() as u64)
+}
+
+/// Seconds in a Go duration string ("1h4m58.5s", "90m", "0"). A
+/// negative or malformed value is `None`.
+pub fn duration_seconds(value: &str) -> Option<f64> {
     let value = value.trim();
     if value == "0" {
-        return Some(0);
+        return Some(0.0);
     }
     if value.is_empty() {
         return None;
@@ -1234,7 +1244,7 @@ pub fn duration_minutes(value: &str) -> Option<u64> {
         seconds += amount * scale;
         rest = &rest[unit..];
     }
-    Some((seconds / 60.0).round() as u64)
+    Some(seconds)
 }
 
 /// A limit's picker token: minutes, or "default" while a profile inherits
@@ -2664,6 +2674,8 @@ mod profile_rules_tests {
         assert_eq!(duration_minutes(""), None);
         assert_eq!(duration_minutes("soon"), None);
         assert_eq!(duration_minutes("5x"), None);
+        assert_eq!(duration_seconds("1h4m58.5s"), Some(3898.5));
+        assert_eq!(duration_seconds("-1m"), None);
         assert_eq!(limit_token(None), "default");
         assert_eq!(limit_token(Some("1h0m0s")), "60");
         assert_eq!(limit_duration("90"), "90m");
@@ -2777,8 +2789,8 @@ mod profile_rules_tests {
         assert!(!off.contains(&"profileSessionLimit"));
 
         let limits = |inputs: &Inputs| page_rows(PLAYTIME_LIMITS_PAGE, inputs).len();
-        assert_eq!(limits(&Inputs::default()), 2);
-        assert_eq!(limits(&with(|i| i.playtime_enabled = true)), 4);
+        assert_eq!(limits(&Inputs::default()), 3);
+        assert_eq!(limits(&with(|i| i.playtime_enabled = true)), 5);
     }
 
     #[test]

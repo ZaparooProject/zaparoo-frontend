@@ -270,13 +270,15 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
     status.set_total_steps(12);
     status.set_percent(42);
     // "…-status-scan": a token that did not start, held in the status
-    // line, with an active profile in the header.
+    // line, with an active profile and its playtime left in the header.
     if screen.ends_with("status-scan") {
         status.set_kind(StatusKind::ScanPlaytimeLimit);
         status.set_arg("".into());
         status.set_show_track(false);
         status.set_percent(-1);
         shell.set_profile_name("Sam".into());
+        shell.set_playtime_hours(1);
+        shell.set_playtime_minutes(5);
     }
     // Background music plays on the Hub and the music screens, so the
     // header's music note renders there.

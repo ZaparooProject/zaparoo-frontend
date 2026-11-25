@@ -35,9 +35,9 @@ use crate::media_types::{
     UpdateSettingsParams, VersionResult,
 };
 use crate::profile_types::{
-    ActiveProfile, ClientsResult, KioskState, NewProfileParams, PlaytimeLimits, Profile,
-    ProfilesResult, SwitchProfileParams, UpdatePlaytimeLimitsParams, UpdateProfileParams,
-    VerifiedProfile, VerifyProfileParams,
+    ActiveProfile, ClientsResult, ExtendPlaytimeParams, KioskState, NewProfileParams,
+    PlaytimeLimits, PlaytimeStatus, Profile, ProfilesResult, SwitchProfileParams,
+    UpdatePlaytimeLimitsParams, UpdateProfileParams, VerifiedProfile, VerifyProfileParams,
 };
 use crate::readers_types::{
     DriversResult, MappingsResult, NewMappingParams, PortsResult, TokenResolution,
@@ -1672,6 +1672,21 @@ impl Client {
     ) -> Result<(), ClientError> {
         self.call("settings.playtime.limits.update", &params)
             .await?;
+        Ok(())
+    }
+
+    /// Where playtime stands now: time left, and any extra time.
+    pub async fn playtime(&self) -> Result<PlaytimeStatus, ClientError> {
+        #[derive(Serialize)]
+        struct P {}
+        let val = self.call("playtime", &P {}).await?;
+        serde_json::from_value(val).map_err(|e| ClientError::plain(e.to_string()))
+    }
+
+    /// Grant extra time to the session being limited now. Core answers
+    /// with what it granted; the caller refetches `playtime` for the rest.
+    pub async fn playtime_extend(&self, params: ExtendPlaytimeParams) -> Result<(), ClientError> {
+        self.call("playtime.extend", &params).await?;
         Ok(())
     }
 

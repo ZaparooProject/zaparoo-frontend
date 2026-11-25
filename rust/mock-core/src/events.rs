@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
 // Scripted transient (non-task) notifications: a card scan, a playtime
-// warning, an inbox message: the events the frontend's header status
+// warning, extra time granted, a limit reached, an inbox message: the
+// events the frontend's header status
 // line listens for. Off by default (`MOCK_CORE_EVENTS` unset)
 // so a plain `just mock-core` session stays quiet; set the env var to
 // exercise the header status line's transient-message path without
@@ -20,7 +21,7 @@ pub fn events_enabled() -> bool {
     std::env::var_os("MOCK_CORE_EVENTS").is_some()
 }
 
-/// Rotates through the four transient event kinds this mock emits.
+/// Rotates through the transient event kinds this mock emits.
 /// Dates are fixed illustrative values (matching the convention already
 /// used for `fixtures.rs`'s history fixtures) rather than the real
 /// clock — nothing here depends on wall-clock time.
@@ -29,10 +30,12 @@ pub async fn run(notifier: Notifier) {
     loop {
         sleep(EVENT_INTERVAL).await;
         tick += 1;
-        match tick % 4 {
+        match tick % 6 {
             1 => notifier_send_tokens_added(&notifier),
             2 => notifier_send_playtime_warning(&notifier),
             3 => notifier_send_blank_token(&notifier),
+            4 => notifier_send_playtime_extended(&notifier),
+            5 => notifier_send_playtime_reached(&notifier),
             _ => notifier_send_inbox_added(&notifier, tick),
         }
     }
@@ -75,6 +78,24 @@ fn notifier_send_playtime_warning(notifier: &Notifier) {
             "remaining": "4m58s",
         }),
     );
+}
+
+/// Extra time granted from another client.
+fn notifier_send_playtime_extended(notifier: &Notifier) {
+    notifier.send(
+        "playtime.extended",
+        &json!({
+            "mode": "duration",
+            "duration": "15m0s",
+            "sessionExtension": "15m0s",
+        }),
+    );
+}
+
+/// The frontend shows this only while a game is running; with none it
+/// is a launch refusal, which the launch reports itself.
+fn notifier_send_playtime_reached(notifier: &Notifier) {
+    notifier.send("playtime.limit.reached", &json!({"reason": "session"}));
 }
 
 fn notifier_send_inbox_added(notifier: &Notifier, tick: u64) {

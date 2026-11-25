@@ -245,6 +245,46 @@ pub struct UpdatePlaytimeLimitsParams {
     pub session_reset: Option<String>,
 }
 
+/// Where playtime stands now (`playtime`). Durations are Go duration
+/// strings; each is absent when Core has nothing to report for it.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaytimeStatus {
+    /// "reset", "active" or "cooldown".
+    #[serde(default)]
+    pub state: String,
+    #[serde(default)]
+    pub session_active: bool,
+    /// Whether limits are enforced right now, the active profile's
+    /// override included.
+    #[serde(default)]
+    pub limits_enabled: bool,
+    #[serde(default)]
+    pub session_remaining: Option<String>,
+    #[serde(default)]
+    pub daily_remaining: Option<String>,
+    /// Extra time granted to the current session.
+    #[serde(default)]
+    pub session_extension: Option<String>,
+    /// When a "rest of today" waiver lapses, RFC 3339.
+    #[serde(default)]
+    pub session_extended_until: Option<String>,
+}
+
+/// `playtime.extend`: extra time for the session being limited now.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtendPlaytimeParams {
+    /// "duration" or "today".
+    pub mode: String,
+    /// Go duration string; only for "duration".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration: Option<String>,
+    /// Makes a retried grant count once.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub request_id: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -279,6 +319,32 @@ mod tests {
         let off: KioskState = serde_json::from_value(json!({"state": "off", "seal": {}}))?;
         assert!(!off.is_locked());
         assert!(!off.profile_switching());
+        Ok(())
+    }
+
+    #[test]
+    fn playtime_status_reads_optional_durations() -> Result<(), serde_json::Error> {
+        let s: PlaytimeStatus = serde_json::from_value(json!({
+            "state": "active",
+            "sessionActive": true,
+            "limitsEnabled": true,
+            "sessionRemaining": "14m30s",
+            "dailyRemaining": "1h2m0s"
+        }))?;
+        assert_eq!(s.session_remaining.as_deref(), Some("14m30s"));
+        assert_eq!(s.daily_remaining.as_deref(), Some("1h2m0s"));
+        assert_eq!(s.session_extension, None);
+        Ok(())
+    }
+
+    #[test]
+    fn rest_of_today_sends_no_duration() -> Result<(), serde_json::Error> {
+        let v = serde_json::to_value(ExtendPlaytimeParams {
+            mode: "today".into(),
+            duration: None,
+            request_id: "abc".into(),
+        })?;
+        assert_eq!(v, json!({"mode": "today", "requestId": "abc"}));
         Ok(())
     }
 

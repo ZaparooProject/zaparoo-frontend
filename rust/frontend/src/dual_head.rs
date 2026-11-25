@@ -470,6 +470,8 @@ fn sync_with_state(primary: &App, crt: &App, state: &mut SyncState) {
         get_has_battery => set_has_battery,
         get_battery_percent => set_battery_percent,
         get_profile_name => set_profile_name,
+        get_playtime_hours => set_playtime_hours,
+        get_playtime_minutes => set_playtime_minutes,
         get_boot_curtain => set_boot_curtain,
         get_boot_complete => set_boot_complete,
         get_boot_status => set_boot_status,

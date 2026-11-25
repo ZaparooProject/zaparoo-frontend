@@ -1442,6 +1442,12 @@ pub fn is_background_slot(slot: &str) -> bool {
     slot.eq_ignore_ascii_case(SLOT_BACKGROUND) || slot.eq_ignore_ascii_case("bg")
 }
 
+/// Whether `slot` names the primary slot, where games run. Empty is
+/// Core's compatibility spelling for it.
+pub fn is_primary_slot(slot: &str) -> bool {
+    slot.is_empty() || slot.eq_ignore_ascii_case("primary")
+}
+
 /// A native audio track's tags, as Core read them from the file. Every
 /// field is optional: most files carry only some of them.
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]

@@ -1601,7 +1601,13 @@ fn open_picker(ctx: &Ctx, app: &App, id: &str) {
             detail: SharedString::default(),
         })
         .collect();
-    let entries = crate::router::mark_chosen(entries, initial);
+    // Extra time is added on top of what was granted: no choice is the
+    // current one.
+    let entries = if id == zaparoo_app::playtime::EXTRA_TIME_ROW {
+        entries
+    } else {
+        crate::router::mark_chosen(entries, initial)
+    };
     lock(&ctx.shared).list_context = ListContext::SettingsPicker(id.to_string());
     let overlays = app.global::<crate::Overlays>();
     // The view translates both the title and every row through the

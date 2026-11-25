@@ -155,7 +155,8 @@ export enum PressOwner { none, hub, systems, games, file-browser, settings, setu
 export enum StatusKind {
     none, disconnected, reconnecting, connecting, core-error, indexing-paused,
     indexing, optimizing, importing-paused, importing, indexed-files,
-    indexing-complete, import-failed, imported, playtime-warning, inbox,
+    indexing-complete, import-failed, imported, playtime-warning,
+    playtime-session-reached, playtime-daily-reached, playtime-extended, playtime-waived, inbox,
     core-loader, core-notice, token-read, scan-media-not-found,
     scan-invalid-script, scan-blocked, scan-profile-required, scan-playtime-limit, scan-busy,
     scan-blank, scan-failed, profile-data-failed,
@@ -168,7 +169,7 @@ export enum PinPage { entry, admins }
 // The token write panel's buttons (`zaparoo_app::token_batch::Button`).
 export enum CardWriteButton { retry, skip, cancel }
 export enum PinError { none, incorrect, not-admin, failed }
-export enum ErrorKind { generic, launch, launch-repair, favorite, collection, deck-list, deck-update, deck-create, media-visibility, media-busy, add-to-hub, save-to-hub, media-index, media-scrape, media-scrapers, media-cancel, launcher, launcher-save, disc-list, version-list, similar-list, qr-code, card-write, setting, pairing, online, backup, local-backup, config-file, image-picker, music, bluetooth, mapping }
+export enum ErrorKind { generic, launch, launch-repair, favorite, collection, deck-list, deck-update, deck-create, media-visibility, media-busy, add-to-hub, save-to-hub, media-index, media-scrape, media-scrapers, media-cancel, launcher, launcher-save, disc-list, version-list, similar-list, qr-code, card-write, setting, pairing, online, backup, local-backup, config-file, image-picker, music, bluetooth, mapping, playtime-extend }
 
 // Text adapters are for vocabulary/resource keys and focus identity only,
 // never routing. Runtime decisions use the enums themselves.

@@ -337,6 +337,7 @@ pub(crate) fn current_value(shared: &Shared, id: &str) -> Option<String> {
         "profileSessionLimit" => {
             rules::limit_token(profile.and_then(|p| p.session_limit.as_deref()))
         }
+        zaparoo_app::playtime::EXTRA_TIME_ROW => crate::playtime::extra_time_value(shared),
         "playtimeDaily" => rules::limit_token(Some(
             core.limits
                 .as_ref()
@@ -408,6 +409,7 @@ pub(crate) fn refused(shared: &Shared, id: &str) -> bool {
                     .is_some_and(|p| !p.is_admin() && !p.has_pin)
         }
         "profileClearPin" => core.editing_profile().is_some_and(Profile::is_admin),
+        zaparoo_app::playtime::EXTRA_TIME_ROW => !crate::playtime::can_extend(shared),
         _ => false,
     }
 }
@@ -960,6 +962,7 @@ fn update_limits(
                 crate::router::report_action_error(&ctx2, &app, "setting", "");
             }
             fetch_limits(&ctx2, &app);
+            crate::playtime::refresh(&ctx2, &app);
         });
     });
 }
@@ -1016,6 +1019,7 @@ pub(crate) fn picker_selected(ctx: &Ctx, app: &App, id: &str, value: &str) -> bo
         "profileRole" | "profileLimits" | "profileDailyLimit" | "profileSessionLimit" => {
             update_profile_field(ctx, app, id, value);
         }
+        zaparoo_app::playtime::EXTRA_TIME_ROW => crate::playtime::extend(ctx, app, value),
         _ => return false,
     }
     true
@@ -1119,6 +1123,8 @@ fn update_profile(
                 }
             }
             fetch_profiles(&ctx2, &app);
+            // A profile's own limits move the time left.
+            crate::playtime::refresh(&ctx2, &app);
         });
     });
 }

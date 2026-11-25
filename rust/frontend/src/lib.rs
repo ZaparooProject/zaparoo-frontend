@@ -87,6 +87,7 @@ mod pairing;
 )]
 mod perf;
 mod pin;
+mod playtime;
 mod playtime_access;
 mod profile_picker;
 mod qr;
@@ -1468,20 +1469,55 @@ fn set_dormant(ctx: &Ctx, app: &App, dormant: bool) {
         // A Core event that is still open shows now; its updates kept
         // arriving while the frontend was dormant.
         core_ui::present(ctx, app);
+        playtime::resumed(ctx, app);
         tracing::info!("primary media stopped; frontend resumed");
     }
 }
 
 /// Core notifications the status line surfaces as transient events
-/// (playtime warnings, inbox messages); everything else is dropped.
+/// (playtime warnings and notices, inbox messages); everything else is dropped.
 fn bind_status_events(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
     let mut rx = client.subscribe_notifications();
     let weak = app.as_weak();
     let ctx = ctx.clone();
     ctx.handle.clone().spawn(async move {
+        let store_running = |ctx: &Ctx| {
+            ctx.store
+                .media_status()
+                .subscribe()
+                .borrow()
+                .primary_active
+                .is_some()
+        };
+        // Whether a game is running as of the notification in hand. Core
+        // says a limit was reached before it stops the game, but the store
+        // folds `media.stopped` on its own task and may already be past
+        // it, so the game edges are followed here, in this stream's order.
+        let mut running = store_running(&ctx);
         loop {
             match rx.recv().await {
                 Ok(notification) => {
+                    if let Some(started) = playtime::primary_edge(&notification) {
+                        running = started;
+                        // A session starts or stops with the game; on a
+                        // remote Core the frontend never goes dormant to
+                        // ask again on resume.
+                        let ctx = ctx.clone();
+                        let _ = weak.upgrade_in_event_loop(move |app| {
+                            playtime::refresh(&ctx, &app);
+                        });
+                        continue;
+                    }
+                    if let Some(incoming) = playtime::classify(&notification) {
+                        // A start this stream missed (a reconnect) is in
+                        // the store's refetch.
+                        let game_running = running || store_running(&ctx);
+                        let ctx = ctx.clone();
+                        let _ = weak.upgrade_in_event_loop(move |app| {
+                            playtime::notified(&ctx, &app, incoming, game_running);
+                        });
+                        continue;
+                    }
                     let Some(event) = status::classify(&notification) else {
                         continue;
                     };
@@ -1490,7 +1526,9 @@ fn bind_status_events(ctx: &Arc<Ctx>, app: &App, client: &Arc<Client>) {
                         status::observe_event(&ctx.status, &app, &ctx.handle, &event);
                     });
                 }
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                    running = store_running(&ctx);
+                }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
             }
         }
