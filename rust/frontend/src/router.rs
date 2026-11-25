@@ -257,7 +257,7 @@ pub enum PendingRestart {
 pub enum ListContext {
     /// The games screen's Menu list.
     ViewMenu,
-    /// The Hub's Menu list (Add item, Reset layout, Settings, Quit), and
+    /// The Hub's Menu list (Search, Add item, Reset layout, Settings, Quit), and
     /// its More list behind the chip row.
     HubPageMenu,
     /// The Hub's "Add item" picker.

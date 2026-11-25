@@ -1925,6 +1925,7 @@ fn open_page_menu(ctx: &Ctx, app: &App) {
         ctx,
         app,
         vec![
+            crate::router::menu_row("hub_search"),
             crate::router::menu_row("hub_add"),
             crate::router::menu_row("hub_reset"),
             crate::router::menu_row("hub_settings"),
@@ -1936,6 +1937,7 @@ fn open_page_menu(ctx: &Ctx, app: &App) {
 /// A Menu list row, or the Add item chip.
 pub fn page_menu_accept(ctx: &Ctx, app: &App, id: &str) {
     match id {
+        "hub_search" => crate::search::enter(ctx, app, EntryMode::Fresh),
         "hub_add" => open_add_picker(ctx, app),
         "hub_reset" => {
             let ids = lock(&ctx.shared).all_categories.clone();
