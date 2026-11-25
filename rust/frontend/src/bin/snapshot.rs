@@ -933,6 +933,22 @@ fn render(width: u32, height: u32, out: &str, screen: &str, help_two_rows: bool)
                 true,
                 "",
             ),
+            row(
+                "music_visualizer",
+                "music_visualizer",
+                "",
+                generated::MenuRole::ToggleOn,
+                true,
+                "",
+            ),
+            row(
+                "music_visualizer_style",
+                "music_visualizer_style",
+                "visualizer:bars",
+                option,
+                true,
+                "",
+            ),
         ])));
         // list-slider focuses the volume slider, list-toggles a toggle.
         ov.set_list_index(if screen.ends_with("list-slider") {
@@ -2337,8 +2353,10 @@ fn fixture_list(screen: &str) -> Option<generated::UserFlag> {
 
 /// The music player: `music` plays a tagged track with Play/Pause focused,
 /// `music-paused` has it paused with Repeat focused, `music-idle` has
-/// nothing on the slot, `music-playlist` is the open playlist's page, and
-/// `music-library` lists a folder of the Audio index.
+/// nothing on the slot, `music-playlist` is the open playlist's page,
+/// `music-library` lists a folder of the Audio index, and
+/// `music-visualizer` plays an album on the primary slot with the level
+/// visualizer up (mirrored on a digital scene, bars on the CRT).
 #[allow(
     clippy::too_many_lines,
     reason = "one fixture fills the player and both list pages"
@@ -2399,6 +2417,22 @@ fn fixture_music(app: &App, scene_w: f64, scene_h: f64, crt: bool, screen: &str)
     view.set_title("Tunnel Vision".into());
     view.set_artist("Neon Harbor".into());
     view.set_album("Night Drive".into());
+    let visualizer = screen.contains("visualizer");
+    view.set_primary(visualizer);
+    view.set_visualizer_on(visualizer);
+    if visualizer {
+        let steps = zaparoo_app::music::LEVEL_STEPS;
+        let levels: Vec<i32> = [30, 27, 25, 22, 26, 20, 17, 19, 15, 12, 14, 10, 8, 7, 5, 3]
+            .into_iter()
+            .map(|level| level.min(steps))
+            .collect();
+        view.set_levels(slint::ModelRc::new(slint::VecModel::from(levels)));
+        view.set_visualizer_style(if crt {
+            generated::VisualizerStyle::Bars
+        } else {
+            generated::VisualizerStyle::Mirror
+        });
+    }
     view.set_up_next(if idle { "" } else { "Rearview" }.into());
     view.set_playlist_name(if idle { "" } else { "Night Drive" }.into());
     view.set_track_number(if idle { 0 } else { 3 });

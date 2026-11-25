@@ -193,15 +193,17 @@ export global Labels {
         if (list == UserFlag.play-later) { return @tr("{n} game" | "{n} games" % n); }
         return @tr("{n} favorite" | "{n} favorites" % n);
     }
-    // The values the two favorites rows can carry, named on their own so
-    // the row that shows one can compose it (a Slint function cannot
-    // call itself).
+    // The values the favorites rows and the visualizer style row can
+    // carry, named on their own so the row that shows one can compose it
+    // (a Slint function cannot call itself).
     public pure function menu-value(key: string) -> string {
         if (key == "sort:name") { return @tr("A-Z"); }
         if (key == "sort:default") { return @tr("Default"); }
         if (key == "sort:added") { return @tr("Recently added"); }
         if (key == "group:none") { return @tr("None"); }
         if (key == "group:system") { return @tr("System"); }
+        if (key == "visualizer:bars") { return @tr("Bars"); }
+        if (key == "visualizer:mirror") { return @tr("Mirror"); }
         return "";
     }
 
@@ -240,6 +242,8 @@ export global Labels {
         if (key == "music_volume") { return @tr("Volume"); }
         if (key == "music_autoplay") { return @tr("Play on startup"); }
         if (key == "music_pause_games") { return @tr("Pause during games"); }
+        if (key == "music_visualizer") { return @tr("Visualizer"); }
+        if (key == "music_visualizer_style") { return @tr("Visualizer style"); }
         if (key == "favorites_sort") { return @tr("Sort"); }
         if (key == "favorites_grouping") { return @tr("Group by"); }
         return Labels.menu(key, name);
@@ -250,6 +254,7 @@ export global Labels {
     public pure function menu-row-value(key: string, name: string) -> string {
         if (key == "filter") { return Labels.filter-value(name); }
         if (key == "music_volume") { return @tr("{}%", name); }
+        if (key == "music_visualizer_style") { return Labels.menu-value(name); }
         if (key == "favorites_sort" || key == "favorites_grouping") { return Labels.menu-value(name); }
         return "";
     }
@@ -381,6 +386,8 @@ export global Labels {
         if (key == "music_volume") { return @tr("Volume: {}%", name); }
         if (key == "music_autoplay") { return @tr("Play on startup"); }
         if (key == "music_pause_games") { return @tr("Pause during games"); }
+        if (key == "music_visualizer") { return @tr("Visualizer"); }
+        if (key == "music_visualizer_style") { return @tr("Visualizer: {}", Labels.menu-value(name)); }
         if (key == "music_play_folder") { return @tr("Play folder"); }
         if (key == "music_shuffle_folder") { return @tr("Shuffle folder"); }
         if (key == "music_play_all") { return @tr("Play all"); }

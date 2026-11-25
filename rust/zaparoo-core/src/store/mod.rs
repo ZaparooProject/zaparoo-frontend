@@ -13,21 +13,23 @@
 // `Client`, and refetch every cache entry whose `provides` set
 // intersects a successful mutation's `invalidates` list.
 
-mod background_media;
 mod catalog_refresh;
 mod device_status;
 mod endpoint;
 #[cfg(test)]
 mod lifecycle_tests;
+mod media_levels;
 mod media_status;
+mod music_media;
 mod mutation;
 mod subscription;
 mod tag;
 
-pub use background_media::{BackgroundMediaResource, BackgroundMediaState};
 pub use device_status::{DeviceResource, DeviceState};
 pub use endpoint::Endpoint;
+pub use media_levels::{LevelsSupport, MediaLevelsResource};
 pub use media_status::{MediaStatusResource, MediaStatusState};
+pub use music_media::{MusicMediaResource, MusicMediaState, MusicSlot, SlotMedia};
 pub use mutation::Mutation;
 pub use subscription::{ResourceHandle, ResourceSubscription};
 pub use tag::Tag;
@@ -259,8 +261,11 @@ pub struct Store {
     /// `Store::new` so the seeding task starts as soon as the frontend
     /// has a `Client`, even if no UI driver has subscribed yet.
     media_status: Arc<MediaStatusResource>,
-    /// What the background slot plays, for the music player.
-    background_media: Arc<BackgroundMediaResource>,
+    /// The music the background and primary slots play, for the music
+    /// player.
+    music_media: Arc<MusicMediaResource>,
+    /// The visualizer's level feed subscription.
+    media_levels: Arc<MediaLevelsResource>,
     /// Controllers and Bluetooth, for Settings and the header.
     device: Arc<DeviceResource>,
 }
@@ -274,14 +279,16 @@ impl std::fmt::Debug for Store {
 impl Store {
     pub fn new(client: Arc<Client>, runtime: Handle) -> Arc<Self> {
         let media_status = MediaStatusResource::new(&client, &runtime);
-        let background_media = BackgroundMediaResource::new(&client, &runtime);
+        let music_media = MusicMediaResource::new(&client, &runtime);
+        let media_levels = MediaLevelsResource::new(&client, &runtime);
         let device = DeviceResource::new(&client, &runtime);
         let store = Arc::new(Self {
             client,
             runtime,
             inner: Arc::new(Mutex::new(Inner::default())),
             media_status: media_status.clone(),
-            background_media,
+            music_media,
+            media_levels,
             device,
         });
         Self::spawn_media_db_invalidation_watcher(&store, &media_status);
@@ -352,8 +359,12 @@ impl Store {
         self.media_status.clone()
     }
 
-    pub fn background_media(&self) -> Arc<BackgroundMediaResource> {
-        self.background_media.clone()
+    pub fn music_media(&self) -> Arc<MusicMediaResource> {
+        self.music_media.clone()
+    }
+
+    pub fn media_levels(&self) -> Arc<MediaLevelsResource> {
+        self.media_levels.clone()
     }
 
     pub fn device(&self) -> Arc<DeviceResource> {

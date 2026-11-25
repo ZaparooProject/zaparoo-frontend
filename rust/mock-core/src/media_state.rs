@@ -22,6 +22,8 @@
 
 use crate::fixtures::MOCK_SYSTEMS;
 use serde_json::{json, Value};
+use std::sync::atomic::AtomicU64;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::time::sleep;
@@ -44,11 +46,27 @@ const LAUNCH_DURATION: Duration = Duration::from_secs(2);
 #[derive(Clone)]
 pub struct Notifier {
     sender: UnboundedSender<Value>,
+    /// This connection's `media.levels.subscribe`: bumped by each call,
+    /// odd while subscribed, so a feed task can tell it was replaced.
+    levels: Arc<AtomicU64>,
 }
 
 impl Notifier {
     pub fn new(sender: UnboundedSender<Value>) -> Self {
-        Self { sender }
+        Self {
+            sender,
+            levels: Arc::default(),
+        }
+    }
+
+    /// The connection's level subscription, shared by its clones.
+    pub(crate) fn levels(&self) -> &Arc<AtomicU64> {
+        &self.levels
+    }
+
+    /// The socket this notifier pushes to has closed.
+    pub(crate) fn closed(&self) -> bool {
+        self.sender.is_closed()
     }
 
     /// A `Notifier` with no live receiver — every `send` is a silent
@@ -58,7 +76,7 @@ impl Notifier {
     #[cfg(test)]
     pub fn noop() -> Self {
         let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
-        Self { sender }
+        Self::new(sender)
     }
 
     /// A `Notifier` whose notifications a test reads back from the
@@ -66,7 +84,7 @@ impl Notifier {
     #[cfg(test)]
     pub fn channel() -> (Self, tokio::sync::mpsc::UnboundedReceiver<Value>) {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
-        (Self { sender }, receiver)
+        (Self::new(sender), receiver)
     }
 
     pub(crate) fn send(&self, method: &str, params: &Value) {

@@ -3,10 +3,10 @@
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
 // The music player driver. Three pages of one screen: the player, which
-// shows what Core's background slot plays with its transport row; the
+// shows the music Core plays with its transport row; the
 // open playlist; and the library, which browses Core's Audio index a
 // folder at a time and starts a folder as a playlist. Everything playing
-// comes from `BackgroundMediaResource`; this driver only sends commands
+// comes from `MusicMediaResource`; this driver only sends commands
 // and renders. The position between Core's answers comes from
 // `zaparoo_app::music::PlaybackClock`, ticked once a second while the
 // player is on screen and the music plays. Library reads are ticketed and
@@ -14,6 +14,8 @@
 // browser. The transport row is pressed through `press_feedback` like
 // every other control, and the page actions are the Menu chip row's.
 
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::time::Duration;
 
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
@@ -22,11 +24,11 @@ use zaparoo_app::media_list::{self as list_rules, SelectionPersist};
 use zaparoo_app::music::{self as rules, Control, EntryKind, PlaybackClock, Repeat};
 use zaparoo_core::input_actions::actions;
 use zaparoo_core::media_types::{
-    MediaActiveImageParams, MediaBrowseParams, MediaControlParams, PlaylistState,
-    PlaylistsUpdateParams, RunParams, UpdateSettingsParams, SLOT_BACKGROUND,
+    MediaActiveImageParams, MediaBrowseParams, MediaControlParams, MediaLevels, PlaylistState,
+    PlaylistsUpdateParams, RunParams, UpdateSettingsParams,
 };
 use zaparoo_core::persist::MusicState;
-use zaparoo_core::store::BackgroundMediaState;
+use zaparoo_core::store::{MusicMediaState, MusicSlot};
 
 use crate::browse_motion::Rapid;
 use crate::music_layout::{layout_for, push_layout, Layout};
@@ -97,8 +99,9 @@ pub struct Model {
     control: Control,
     /// The focused row on the playlist page.
     row: usize,
-    /// The background slot as last heard.
-    bg: BackgroundMediaState,
+    /// The music slots as last heard. The player shows one of them
+    /// (`MusicMediaState::shown_slot`) and sends its controls there.
+    media: MusicMediaState,
     clock: PlaybackClock,
     playlist_top: usize,
     /// The library folders opened, outermost first; empty at the top.
@@ -170,12 +173,13 @@ fn now_ms() -> u64 {
 // ---------- State ----------
 
 fn playlist(model: &Model) -> Option<&PlaylistState> {
-    model.bg.playlist.as_deref()
+    model.media.shown().playlist.as_deref()
 }
 
-fn now_of(bg: &BackgroundMediaState) -> rules::Now {
-    let track = bg.track.as_ref();
-    let playlist = bg.playlist.as_deref();
+fn now_of(media: &MusicMediaState) -> rules::Now {
+    let shown = media.shown();
+    let track = shown.track.as_ref();
+    let playlist = shown.playlist.as_deref();
     rules::Now {
         has_track: track.is_some(),
         playback: rules::Playback::from_core(
@@ -192,6 +196,7 @@ fn now_of(bg: &BackgroundMediaState) -> rules::Now {
         shuffle: playlist.and_then(|p| p.shuffle).unwrap_or(false),
         repeat: playlist.map_or(Repeat::default(), |p| Repeat::from_core(&p.repeat)),
         starting: false,
+        primary: media.shown_slot() == MusicSlot::Primary,
     }
 }
 
@@ -200,12 +205,17 @@ fn now_of(bg: &BackgroundMediaState) -> rules::Now {
 fn now(model: &Model) -> rules::Now {
     rules::Now {
         starting: model.start.pending(),
-        ..now_of(&model.bg)
+        ..now_of(&model.media)
     }
 }
 
 fn track_path(model: &Model) -> Option<&str> {
-    model.bg.track.as_ref().map(|t| t.media_path.as_str())
+    model
+        .media
+        .shown()
+        .track
+        .as_ref()
+        .map(|t| t.media_path.as_str())
 }
 
 /// A request that starts a track went out: the controls that launch wait
@@ -343,7 +353,8 @@ pub(crate) fn render(ctx: &Ctx, app: &App) {
     view.set_focus_ready(true);
 
     // Now playing.
-    let track = model.bg.track.as_ref();
+    view.set_primary(model.media.shown_slot() == MusicSlot::Primary);
+    let track = model.media.shown().track.as_ref();
     let tags = track.and_then(|t| t.track.as_ref());
     view.set_has_track(track.is_some());
     let title = tags
@@ -484,6 +495,8 @@ pub(crate) fn render(ctx: &Ctx, app: &App) {
         Page::Player | Page::Playlist => shared.music.playlist_top = top,
         Page::Library => shared.music.list_top = top,
     }
+    drop(shared);
+    update_visualizer(ctx, app);
 }
 
 /// The rail: the folder's letters with the current one, and the position.
@@ -575,10 +588,10 @@ fn refresh(ctx: &Ctx, app: &App) {
 
 // ---------- Live state ----------
 
-/// Follow the background slot: the header's music note everywhere, and the
-/// player while it is on screen.
-pub fn bind_background(ctx: &Ctx, app: &App) {
-    let resource = ctx.store.background_media();
+/// Follow the music slots: the header's music note everywhere, the player
+/// while it is on screen, and music starting on the primary slot opens it.
+pub fn bind_media(ctx: &Ctx, app: &App) {
+    let resource = ctx.store.music_media();
     let mut rx = resource.subscribe();
     let weak = app.as_weak();
     let ctx = ctx.clone();
@@ -587,7 +600,7 @@ pub fn bind_background(ctx: &Ctx, app: &App) {
             let state = rx.borrow_and_update().clone();
             let ctx2 = ctx.clone();
             if weak
-                .upgrade_in_event_loop(move |app| background_changed(&ctx2, &app, state))
+                .upgrade_in_event_loop(move |app| media_changed(&ctx2, &app, state))
                 .is_err()
             {
                 return;
@@ -599,13 +612,15 @@ pub fn bind_background(ctx: &Ctx, app: &App) {
     });
 }
 
-pub(crate) fn background_changed(ctx: &Ctx, app: &App, state: BackgroundMediaState) {
+pub(crate) fn media_changed(ctx: &Ctx, app: &App, state: MusicMediaState) {
+    let shown = state.shown();
     tracing::debug!(
-        track = state.track.as_ref().map_or("", |t| t.media_name.as_str()),
-        index = state.playlist.as_ref().map(|p| p.index),
+        slot = state.shown_slot().token(),
+        track = shown.track.as_ref().map_or("", |t| t.media_name.as_str()),
+        index = shown.playlist.as_ref().map(|p| p.index),
         playing = state.playing(),
         on_screen = on_screen(app),
-        "music: the background slot changed"
+        "music: the music slots changed"
     );
     app.global::<crate::Shell>()
         .set_music_playing(state.playing());
@@ -613,12 +628,12 @@ pub(crate) fn background_changed(ctx: &Ctx, app: &App, state: BackgroundMediaSta
         let mut shared = lock(&ctx.shared);
         let model = &mut shared.music;
         let now = now_of(&state);
-        let track = state.track.as_ref();
+        let track = state.shown().track.as_ref();
         // Only an answer about the track moves the clock: a playlist change
         // carries the track as last heard, and syncing to that would jump
         // the time back.
-        let clock_changed =
-            model.bg.track.as_ref() != track || now_of(&model.bg).playing() != now.playing();
+        let clock_changed = model.media.shown().track.as_ref() != track
+            || now_of(&model.media).playing() != now.playing();
         if clock_changed {
             model.clock.sync(
                 track
@@ -650,9 +665,10 @@ pub(crate) fn background_changed(ctx: &Ctx, app: &App, state: BackgroundMediaSta
             model.cover_requested = true;
         }
         // A new playlist seats the playlist focus on its current track.
-        let changed_list = model.bg.playlist.as_ref().map(|p| p.id.clone())
-            != state.playlist.as_ref().map(|p| p.id.clone());
-        model.bg = state;
+        let changed_list = model.media.shown().playlist.as_ref().map(|p| p.id.clone())
+            != state.shown().playlist.as_ref().map(|p| p.id.clone());
+        let started = state.primary_started(&model.media).then(|| state.clone());
+        model.media = state;
         // The track this player asked for has started: the controls that
         // launch come back.
         let current = track_path(model).map(str::to_string);
@@ -668,12 +684,17 @@ pub(crate) fn background_changed(ctx: &Ctx, app: &App, state: BackgroundMediaSta
         // is asked again shortly rather than showing the file name until
         // the next resync.
         let untagged = new_track
-            && !model.bg.pushes_playback
+            && !model.media.pushes_playback
             && !path.is_empty()
-            && model.bg.track.as_ref().is_some_and(|t| t.track.is_none());
-        (fetch.then_some(path), untagged)
+            && model
+                .media
+                .shown()
+                .track
+                .as_ref()
+                .is_some_and(|t| t.track.is_none());
+        (fetch.then_some(path), untagged, started)
     };
-    let (fetch_cover, untagged) = fetch_cover;
+    let (fetch_cover, untagged, started) = fetch_cover;
     if let Some(path) = fetch_cover {
         fetch_cover_art(ctx, app, path);
     }
@@ -683,21 +704,46 @@ pub(crate) fn background_changed(ctx: &Ctx, app: &App, state: BackgroundMediaSta
             resync_now(&ctx);
         });
     }
+    if let Some(media) = started.filter(|_| may_open_player(app)) {
+        tracing::info!("music: music started on the primary slot, opening the player");
+        crate::games::flush_persist(ctx);
+        open_player(ctx, app, media);
+        return;
+    }
     refresh(ctx, app);
+}
+
+/// Whether music starting on the primary slot may take the screen: not
+/// over the player itself, a modal, a route already moving, text being
+/// typed, or a frontend asleep behind a game.
+fn may_open_player(app: &App) -> bool {
+    let shell = app.global::<crate::Shell>();
+    !on_screen(app)
+        && !shell.get_dormant()
+        && !shell.get_transitioning()
+        && !crate::input::modal_open(app)
+        && !matches!(
+            shell.get_active_screen(),
+            crate::Screen::Rename | crate::Screen::RaLogin | crate::Screen::Update
+        )
 }
 
 /// Ask Core for the cover at the art box's size. The box changes with the
 /// scene, and a cover decoded for another box would be resampled.
 fn fetch_cover_art(ctx: &Ctx, app: &App, path: String) {
     let size = layout(ctx, app).player.art_size.max(1);
-    lock(&ctx.shared).music.cover_size = size;
+    let slot = {
+        let mut shared = lock(&ctx.shared);
+        shared.music.cover_size = size;
+        shared.music.media.shown_slot()
+    };
     let client = ctx.store.client();
     let weak = app.as_weak();
     let ctx2 = ctx.clone();
     let task = ctx.handle.spawn(async move {
         let Ok(result) = client
             .media_active_image(MediaActiveImageParams {
-                slot: SLOT_BACKGROUND.to_string(),
+                slot: slot.token().to_string(),
                 max_size: u32::try_from(size).ok(),
             })
             .await
@@ -738,9 +784,10 @@ fn update_tick(ctx: &Ctx, app: &App) {
         rules::should_poll(
             on_screen(app) && model.page == Page::Player,
             true,
-            now_of(&model.bg).playing(),
+            now_of(&model.media).playing(),
         )
     };
+    update_visualizer(ctx, app);
     TICK.with(|timer| {
         if !wanted {
             timer.stop();
@@ -762,6 +809,7 @@ fn update_tick(ctx: &Ctx, app: &App) {
                 // to the Hub): the tick ends with it.
                 if !on_screen(&app) || lock(&ctx.shared).music.page != Page::Player {
                     TICK.with(slint::Timer::stop);
+                    update_visualizer(&ctx, &app);
                     return;
                 }
                 let shell = app.global::<crate::Shell>();
@@ -775,7 +823,7 @@ fn update_tick(ctx: &Ctx, app: &App) {
                     publish_clock(&view, &shared.music);
                     // Core's own notifications keep a pushing Core current;
                     // asking now and then is only the backup.
-                    let every = if shared.music.bg.pushes_playback {
+                    let every = if shared.music.media.pushes_playback {
                         rules::BACKUP_RESYNC_MS
                     } else {
                         rules::RESYNC_MS
@@ -785,13 +833,221 @@ fn update_tick(ctx: &Ctx, app: &App) {
                 if resync {
                     resync_now(&ctx);
                 }
+                // Back from the screensaver or a game: the bars come back.
+                update_visualizer(&ctx, &app);
             },
         );
     });
 }
 
+// ---------- Visualizer ----------
+
+/// The level visualizer on the event loop: the readings it follows, the
+/// bars as drawn, and the view model they are written into in place.
+struct Visualizer {
+    rx: tokio::sync::watch::Receiver<MediaLevels>,
+    /// One height per band, made once and handed to the view once.
+    bars: Rc<VecModel<i32>>,
+    meter: rules::Meter,
+    slot: MusicSlot,
+    /// The last reading drawn, and when it was heard.
+    seq: u64,
+    heard_ms: Option<u64>,
+    frame_ms: u64,
+}
+
+impl Visualizer {
+    /// Skip whatever `slot` last read: a reading from before the player
+    /// looked is not drawn.
+    fn follow(&mut self, slot: MusicSlot) {
+        self.slot = slot;
+        self.seq = self.rx.borrow().slot(slot.token()).seq;
+        self.heard_ms = None;
+    }
+
+    /// One frame at `now`. Returns whether bars are up and whether the
+    /// feed is live.
+    fn frame(&mut self, slot: MusicSlot, now: u64) -> (bool, bool) {
+        let elapsed = now.saturating_sub(self.frame_ms);
+        self.frame_ms = now;
+        if slot != self.slot {
+            self.follow(slot);
+        }
+        let reading = *self.rx.borrow().slot(slot.token());
+        if reading.seq != self.seq {
+            self.seq = reading.seq;
+            self.heard_ms = Some(now);
+        }
+        let fresh = self
+            .heard_ms
+            .is_some_and(|heard| rules::level_fresh(now.saturating_sub(heard)));
+        self.meter.step(fresh.then_some(&reading.bands), elapsed);
+        let bars = &self.bars;
+        self.meter.publish(rules::LEVEL_STEPS, |band, height| {
+            slint::Model::set_row_data(&**bars, band, height);
+        });
+        (!self.meter.silent(), fresh)
+    }
+
+    /// Drop every bar at once.
+    fn clear(&mut self) {
+        self.meter.clear();
+        let bars = &self.bars;
+        self.meter.publish(rules::LEVEL_STEPS, |band, height| {
+            slint::Model::set_row_data(&**bars, band, height);
+        });
+    }
+}
+
+thread_local! {
+    static VISUALIZER: RefCell<Option<Visualizer>> = const { RefCell::new(None) };
+    /// The visualizer's frame, at Core's own rate while bars move or the
+    /// feed is live. Readings between frames are skipped, not queued.
+    static FRAME: slint::Timer = slint::Timer::default();
+}
+
+/// Whether the visualizer belongs on screen: the player page in view, the
+/// frontend awake with no screensaver, and the option on.
+fn visualizer_wanted(ctx: &Ctx, app: &App) -> bool {
+    let shell = app.global::<crate::Shell>();
+    if !on_screen(app) || shell.get_dormant() || shell.get_saver_armed() {
+        return false;
+    }
+    let shared = lock(&ctx.shared);
+    shared.music.page == Page::Player && shared.persist.settings.music_visualizer
+}
+
+/// Bring the visualizer in step with the screen: subscribe to Core's level
+/// feed while it is wanted, and run the frame while it has something to
+/// draw. Cheap when nothing changed; called on every refresh.
+pub(crate) fn update_visualizer(ctx: &Ctx, app: &App) {
+    let wanted = visualizer_wanted(ctx, app);
+    let levels = ctx.store.media_levels();
+    levels.set_wanted(wanted);
+    let view = app.global::<MusicView>();
+    let style = match rules::VisualizerStyle::parse(
+        &lock(&ctx.shared).persist.settings.music_visualizer_style,
+    ) {
+        rules::VisualizerStyle::Bars => crate::VisualizerStyle::Bars,
+        rules::VisualizerStyle::Mirror => crate::VisualizerStyle::Mirror,
+    };
+    if view.get_visualizer_style() != style {
+        view.set_visualizer_style(style);
+    }
+    if !wanted || levels.support().unsupported {
+        hide_visualizer(app);
+        return;
+    }
+    if FRAME.with(slint::Timer::running) {
+        return;
+    }
+    let slot = lock(&ctx.shared).music.media.shown_slot();
+    let now = now_ms();
+    VISUALIZER.with(|cell| {
+        let mut cell = cell.borrow_mut();
+        let visualizer = cell.get_or_insert_with(|| {
+            let bars = Rc::new(VecModel::from(vec![0; rules::LEVEL_BANDS]));
+            view.set_levels(ModelRc::from(bars.clone()));
+            Visualizer {
+                rx: levels.subscribe_levels(),
+                bars,
+                meter: rules::Meter::default(),
+                slot,
+                seq: 0,
+                heard_ms: None,
+                frame_ms: now,
+            }
+        });
+        visualizer.follow(slot);
+        visualizer.frame_ms = now;
+    });
+    let weak = app.as_weak();
+    let ctx = ctx.clone();
+    FRAME.with(|timer| {
+        timer.start(
+            slint::TimerMode::Repeated,
+            Duration::from_millis(rules::VISUALIZER_FRAME_MS),
+            move || {
+                let Some(app) = weak.upgrade() else {
+                    return;
+                };
+                visualizer_frame(&ctx, &app);
+            },
+        );
+    });
+}
+
+fn visualizer_frame(ctx: &Ctx, app: &App) {
+    if !visualizer_wanted(ctx, app) {
+        update_visualizer(ctx, app);
+        return;
+    }
+    let (slot, playing) = {
+        let shared = lock(&ctx.shared);
+        let media = &shared.music.media;
+        let slot = media.shown_slot();
+        (slot, media.slot(slot).playing())
+    };
+    let Some((on, fresh)) = VISUALIZER.with(|cell| {
+        cell.borrow_mut()
+            .as_mut()
+            .map(|visualizer| visualizer.frame(slot, now_ms()))
+    }) else {
+        FRAME.with(slint::Timer::stop);
+        return;
+    };
+    let view = app.global::<MusicView>();
+    if view.get_visualizer_on() != on {
+        view.set_visualizer_on(on);
+    }
+    // The bars are down and the feed is quiet: nothing to draw until the
+    // music plays again, which refreshes the player and starts the frame.
+    if !on && !fresh && !playing {
+        FRAME.with(slint::Timer::stop);
+    }
+}
+
+/// Stop the frame and take the bars down.
+fn hide_visualizer(app: &App) {
+    FRAME.with(slint::Timer::stop);
+    VISUALIZER.with(|cell| {
+        if let Some(visualizer) = cell.borrow_mut().as_mut() {
+            visualizer.clear();
+        }
+    });
+    let view = app.global::<MusicView>();
+    if view.get_visualizer_on() {
+        view.set_visualizer_on(false);
+    }
+}
+
+/// Leaving the player: the feed is no longer wanted.
+fn stop_visualizer(ctx: &Ctx, app: &App) {
+    ctx.store.media_levels().set_wanted(false);
+    hide_visualizer(app);
+}
+
+/// Hide the visualizer once Core turns out to have no level feed, and try
+/// again on a connection that might.
+fn bind_visualizer(ctx: &Ctx, app: &App) {
+    let mut rx = ctx.store.media_levels().subscribe_support();
+    let weak = app.as_weak();
+    let ctx = ctx.clone();
+    ctx.handle.clone().spawn(async move {
+        while rx.changed().await.is_ok() {
+            let ctx2 = ctx.clone();
+            if weak
+                .upgrade_in_event_loop(move |app| update_visualizer(&ctx2, &app))
+                .is_err()
+            {
+                return;
+            }
+        }
+    });
+}
+
 fn resync_now(ctx: &Ctx) {
-    let resource = ctx.store.background_media();
+    let resource = ctx.store.music_media();
     ctx.handle.spawn(async move {
         if let Err(e) = resource.resync().await {
             tracing::debug!("music: resync failed: {}", e.message);
@@ -817,6 +1073,8 @@ fn send(ctx: &Ctx, app: &App, command: rules::Command) {
     let client = ctx.store.client();
     let weak = app.as_weak();
     let ctx2 = ctx.clone();
+    // Controls go to the slot on show; a library pick names its own.
+    let slot = lock(&ctx.shared).music.media.shown_slot().token();
     ctx.handle.spawn(async move {
         let result = match command {
             rules::Command::Run(text) => client.run(RunParams { text }).await,
@@ -824,7 +1082,7 @@ fn send(ctx: &Ctx, app: &App, command: rules::Command) {
                 client
                     .media_control(MediaControlParams {
                         action: action.to_string(),
-                        slot: SLOT_BACKGROUND.to_string(),
+                        slot: slot.to_string(),
                         args: std::collections::BTreeMap::new(),
                     })
                     .await
@@ -832,7 +1090,7 @@ fn send(ctx: &Ctx, app: &App, command: rules::Command) {
             rules::Command::Update { shuffle, repeat } => {
                 client
                     .playlists_update(PlaylistsUpdateParams {
-                        slot: SLOT_BACKGROUND.to_string(),
+                        slot: slot.to_string(),
                         shuffle,
                         repeat: repeat.map(|r| r.core_token().to_string()),
                     })
@@ -997,13 +1255,17 @@ pub(crate) fn flush_selection(ctx: &Ctx) {
 
 /// Open the player from its Hub tile.
 pub(crate) fn enter(ctx: &Ctx, app: &App) {
+    open_player(ctx, app, ctx.store.music_media().current());
+}
+
+/// Open the player on `media`, the music slots as last heard.
+fn open_player(ctx: &Ctx, app: &App, media: MusicMediaState) {
     {
         let mut shared = lock(&ctx.shared);
-        let bg = ctx.store.background_media().current();
         let model = &mut shared.music;
         model.task.cancel();
         model.page = Page::Player;
-        model.bg = bg;
+        model.media = media;
         model.control = Control::default();
         model.row = current_track(model);
         model.playlist_top = 0;
@@ -1018,8 +1280,8 @@ pub(crate) fn enter(ctx: &Ctx, app: &App) {
 }
 
 /// Cold start on the player: the same page, control and row. The player
-/// waits under the curtain for Core's first answer about the background
-/// slot; the library waits for its folder.
+/// waits under the curtain for Core's first answer about the music
+/// slots; the library waits for its folder.
 pub(crate) fn restore(ctx: &Ctx, app: &App) {
     let saved = lock(&ctx.shared).persist.music.clone();
     {
@@ -1043,7 +1305,7 @@ pub(crate) fn restore(ctx: &Ctx, app: &App) {
         return;
     }
     crate::router::begin_pending(app, crate::Screen::Music);
-    let resource = ctx.store.background_media();
+    let resource = ctx.store.music_media();
     let mut rx = resource.subscribe();
     let weak = app.as_weak();
     let ctx2 = ctx.clone();
@@ -1063,9 +1325,9 @@ pub(crate) fn restore(ctx: &Ctx, app: &App) {
     lock(&ctx.shared).music.task.replace(task);
 }
 
-/// Core's first answer about the background slot reached a restore that is
+/// Core's first answer about the music slots reached a restore that is
 /// still waiting: seat the saved row and show the player.
-pub(crate) fn restore_landed(ctx: &Ctx, app: &App, state: BackgroundMediaState) {
+pub(crate) fn restore_landed(ctx: &Ctx, app: &App, state: MusicMediaState) {
     let shell = app.global::<crate::Shell>();
     if !shell.get_transitioning() || shell.get_transition_target() != crate::Screen::Music {
         return;
@@ -1074,7 +1336,7 @@ pub(crate) fn restore_landed(ctx: &Ctx, app: &App, state: BackgroundMediaState) 
         let mut shared = lock(&ctx.shared);
         let saved = shared.persist.music.clone();
         let model = &mut shared.music;
-        model.bg = state;
+        model.media = state;
         let items: Vec<String> = playlist(model)
             .map(|p| p.items.iter().map(|i| i.zap_script.clone()).collect())
             .unwrap_or_default();
@@ -1114,6 +1376,7 @@ fn leave(ctx: &Ctx, app: &App) {
         shared.persist.music = MusicState::default();
     }
     TICK.with(slint::Timer::stop);
+    stop_visualizer(ctx, app);
     lock(&ctx.shared).persist.active_screen = crate::Screen::Hub.token().to_string();
     crate::router::save_persist(&ctx.shared);
     crate::router::return_to_hub(ctx, app);
@@ -1203,7 +1466,21 @@ fn slider_row(settings: Settings) -> crate::MenuEntry {
 
 /// The player's two settings toggles, behind More on the chip row and at
 /// the end of the Menu list.
-fn toggle_entries(settings: Settings) -> Vec<crate::MenuEntry> {
+/// The visualizer's persisted options, as the Menu rows show them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct VisualizerOption {
+    on: bool,
+    style: rules::VisualizerStyle,
+}
+
+fn visualizer_option(shared: &Shared) -> VisualizerOption {
+    VisualizerOption {
+        on: shared.persist.settings.music_visualizer,
+        style: rules::VisualizerStyle::parse(&shared.persist.settings.music_visualizer_style),
+    }
+}
+
+fn toggle_entries(settings: Settings, visualizer: VisualizerOption) -> Vec<crate::MenuEntry> {
     let switch = |id: &str, value: Option<bool>| {
         let reason = settings.reason(value.is_some());
         crate::router::with_role(
@@ -1215,16 +1492,36 @@ fn toggle_entries(settings: Settings) -> Vec<crate::MenuEntry> {
             },
         )
     };
+    let style = format!("visualizer:{}", visualizer.style.token());
     vec![
         switch("music_autoplay", settings.autoplay),
         switch("music_pause_games", settings.pause_games),
+        crate::router::with_role(
+            crate::router::menu_row("music_visualizer"),
+            if visualizer.on {
+                crate::MenuRole::ToggleOn
+            } else {
+                crate::MenuRole::ToggleOff
+            },
+        ),
+        crate::router::menu_row_full(
+            "music_visualizer_style",
+            "music_visualizer_style",
+            &style,
+            true,
+            "",
+        ),
     ]
 }
 
 /// The player's Menu list: the open playlist, choosing music and stopping
 /// it, then the music settings. It is what the chip row offers, for the
 /// scenes without one. A row that cannot act stays, muted, and says why.
-fn player_menu_entries(settings: Settings, now: &rules::Now) -> Vec<crate::MenuEntry> {
+fn player_menu_entries(
+    settings: Settings,
+    visualizer: VisualizerOption,
+    now: &rules::Now,
+) -> Vec<crate::MenuEntry> {
     let when = |id: &str, ok: bool, reason: &str| {
         crate::router::menu_row_full(id, id, "", ok, if ok { "" } else { reason })
     };
@@ -1238,7 +1535,7 @@ fn player_menu_entries(settings: Settings, now: &rules::Now) -> Vec<crate::MenuE
         ),
         slider_row(settings),
     ];
-    rows.extend(toggle_entries(settings));
+    rows.extend(toggle_entries(settings, visualizer));
     rows
 }
 
@@ -1251,10 +1548,14 @@ fn menu_changed(ctx: &Ctx, app: &App) {
             return;
         }
         match shared.list_context {
-            crate::router::ListContext::MusicMenu => {
-                player_menu_entries(shared.music.settings, &now(&shared.music))
+            crate::router::ListContext::MusicMenu => player_menu_entries(
+                shared.music.settings,
+                visualizer_option(&shared),
+                &now(&shared.music),
+            ),
+            crate::router::ListContext::MusicMore => {
+                toggle_entries(shared.music.settings, visualizer_option(&shared))
             }
-            crate::router::ListContext::MusicMore => toggle_entries(shared.music.settings),
             crate::router::ListContext::MusicVolume => vec![slider_row(shared.music.settings)],
             _ => return,
         }
@@ -1306,7 +1607,10 @@ pub(crate) fn open_more(ctx: &Ctx, app: &App) {
     if lock(&ctx.shared).music.settings.state == SettingsState::Failed {
         fetch_settings(ctx, app);
     }
-    let entries = toggle_entries(lock(&ctx.shared).music.settings);
+    let entries = {
+        let shared = lock(&ctx.shared);
+        toggle_entries(shared.music.settings, visualizer_option(&shared))
+    };
     crate::router::present_list(
         ctx,
         app,
@@ -1319,7 +1623,11 @@ pub(crate) fn open_more(ctx: &Ctx, app: &App) {
 /// The Menu's rows as Core's settings and the slot stand now.
 fn menu_entries_now(ctx: &Ctx) -> Vec<crate::MenuEntry> {
     let shared = lock(&ctx.shared);
-    player_menu_entries(shared.music.settings, &now(&shared.music))
+    player_menu_entries(
+        shared.music.settings,
+        visualizer_option(&shared),
+        &now(&shared.music),
+    )
 }
 
 /// The Volume chip: a panel holding the volume slider alone. In the Menu
@@ -1411,7 +1719,14 @@ fn save_volume(ctx: &Ctx, app: &App, volume: i32) {
 /// toggles show their new value in place, and Volume turns the panel to
 /// its page.
 pub(crate) fn menu_stays_open(id: &str) -> bool {
-    matches!(id, "music_autoplay" | "music_pause_games" | "music_volume")
+    matches!(
+        id,
+        "music_autoplay"
+            | "music_pause_games"
+            | "music_volume"
+            | "music_visualizer"
+            | "music_visualizer_style"
+    )
 }
 
 /// A page action, from the Menu list (`from_menu`) or its chip.
@@ -1457,6 +1772,24 @@ pub(crate) fn page_action(ctx: &Ctx, app: &App, id: &str, from_menu: bool) {
                     ..UpdateSettingsParams::default()
                 },
             );
+        }
+        "music_visualizer" | "music_visualizer_style" => {
+            {
+                let mut shared = lock(&ctx.shared);
+                let settings = &mut shared.persist.settings;
+                if id == "music_visualizer" {
+                    settings.music_visualizer = !settings.music_visualizer;
+                } else {
+                    settings.music_visualizer_style =
+                        rules::VisualizerStyle::parse(&settings.music_visualizer_style)
+                            .next()
+                            .token()
+                            .to_string();
+                }
+            }
+            crate::router::save_persist(&ctx.shared);
+            menu_changed(ctx, app);
+            update_visualizer(ctx, app);
         }
         _ => {}
     }
@@ -1783,7 +2116,7 @@ fn show_player(ctx: &Ctx, app: &App) {
         model.task.cancel();
         model.ticket = model.ticket.wrapping_add(1);
         model.page = Page::Player;
-        model.bg = ctx.store.background_media().current();
+        model.media = ctx.store.music_media().current();
         write_persist(&mut shared);
     }
     crate::router::save_persist(&ctx.shared);
@@ -2098,7 +2431,7 @@ fn player_step(ctx: &Ctx, app: &App, right: bool) {
 /// already playing. The row flashes as a games row does.
 fn playlist_accept(ctx: &Ctx, app: &App) {
     flush_persist(ctx);
-    let (row, current, playing, count, starting) = {
+    let (row, current, playing, count, starting, primary) = {
         let shared = lock(&ctx.shared);
         let model = &shared.music;
         (
@@ -2107,6 +2440,7 @@ fn playlist_accept(ctx: &Ctx, app: &App) {
             playlist(model).is_some_and(|p| p.playing),
             playlist_len(model),
             model.start.pending(),
+            model.media.shown_slot() == MusicSlot::Primary,
         )
     };
     // Core takes no other launch while a track is starting.
@@ -2121,7 +2455,7 @@ fn playlist_accept(ctx: &Ctx, app: &App) {
     send(
         ctx,
         app,
-        rules::Command::Run(rules::goto_script(row, playing)),
+        rules::Command::Run(rules::goto_script(row, playing, primary)),
     );
     flash_row(ctx, app);
 }
@@ -2246,7 +2580,8 @@ pub(crate) fn relayout(ctx: &Ctx, app: &App) {
         let shared = lock(&ctx.shared);
         let model = &shared.music;
         let has_art = model
-            .bg
+            .media
+            .shown()
             .track
             .as_ref()
             .and_then(|t| t.track.as_ref())
@@ -2313,8 +2648,9 @@ fn point_control(ctx: &Ctx, index: i32) -> bool {
     true
 }
 
-/// Wire the view's pointer callbacks and the live background slot.
+/// Wire the view's pointer callbacks and the live music slots.
 pub fn bind(ctx: &Ctx, app: &App) {
+    bind_visualizer(ctx, app);
     let input = app.global::<MusicInput>();
     {
         let ctx = ctx.clone();
@@ -2411,45 +2747,49 @@ pub fn bind(ctx: &Ctx, app: &App) {
     };
     input.on_wheel(page(ctx.clone(), app.as_weak()));
     input.on_page_requested(page(ctx.clone(), app.as_weak()));
-    bind_background(ctx, app);
+    bind_media(ctx, app);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use zaparoo_core::media_types::{ActiveMediaInfo, PlaylistItem};
+    use zaparoo_core::store::SlotMedia;
 
-    fn state(playing: bool, shuffle: Option<bool>) -> BackgroundMediaState {
-        BackgroundMediaState {
+    fn state(playing: bool, shuffle: Option<bool>) -> MusicMediaState {
+        MusicMediaState {
             seeded: true,
             pushes_playback: false,
-            track: Some(ActiveMediaInfo {
-                slot: "background".into(),
-                media_name: "Moonlight Shadow".into(),
-                playback_state: if playing { "playing" } else { "paused" }.into(),
-                launcher_controls: vec!["toggle_pause".into(), "rewind".into()],
-                ..ActiveMediaInfo::default()
-            }),
-            playlist: Some(std::sync::Arc::new(PlaylistState {
-                id: "/m".into(),
-                name: "m".into(),
-                slot: "background".into(),
-                repeat: "all".into(),
-                items: vec![
-                    PlaylistItem {
-                        name: "One".into(),
-                        zap_script: "/m/1.mp3".into(),
-                    },
-                    PlaylistItem {
-                        name: String::new(),
-                        zap_script: "/m/02 Two.mp3".into(),
-                    },
-                ],
-                index: 1,
-                total: 2,
-                playing,
-                shuffle,
-            })),
+            primary: SlotMedia::default(),
+            background: SlotMedia {
+                track: Some(ActiveMediaInfo {
+                    slot: "background".into(),
+                    media_name: "Moonlight Shadow".into(),
+                    playback_state: if playing { "playing" } else { "paused" }.into(),
+                    launcher_controls: vec!["toggle_pause".into(), "rewind".into()],
+                    ..ActiveMediaInfo::default()
+                }),
+                playlist: Some(std::sync::Arc::new(PlaylistState {
+                    id: "/m".into(),
+                    name: "m".into(),
+                    slot: "background".into(),
+                    repeat: "all".into(),
+                    items: vec![
+                        PlaylistItem {
+                            name: "One".into(),
+                            zap_script: "/m/1.mp3".into(),
+                        },
+                        PlaylistItem {
+                            name: String::new(),
+                            zap_script: "/m/02 Two.mp3".into(),
+                        },
+                    ],
+                    index: 1,
+                    total: 2,
+                    playing,
+                    shuffle,
+                })),
+            },
         }
     }
 
@@ -2464,7 +2804,7 @@ mod tests {
         let old_core = now_of(&state(false, None));
         assert!(!old_core.playing());
         assert!(!old_core.can_update_playlist);
-        let idle = now_of(&BackgroundMediaState::default());
+        let idle = now_of(&MusicMediaState::default());
         assert!(!idle.has_track && !idle.has_playlist);
     }
 
@@ -2476,8 +2816,12 @@ mod tests {
 
     #[test]
     fn the_menu_disables_what_cannot_act_and_says_why() {
-        let idle = now_of(&BackgroundMediaState::default());
-        let entries = player_menu_entries(Settings::default(), &idle);
+        let idle = now_of(&MusicMediaState::default());
+        let look = VisualizerOption {
+            on: true,
+            style: rules::VisualizerStyle::Bars,
+        };
+        let entries = player_menu_entries(Settings::default(), look, &idle);
         let ids: Vec<&str> = entries.iter().map(|e| e.id.as_str()).collect();
         assert_eq!(
             ids,
@@ -2487,15 +2831,17 @@ mod tests {
                 "music_stop",
                 "music_volume",
                 "music_autoplay",
-                "music_pause_games"
+                "music_pause_games",
+                "music_visualizer",
+                "music_visualizer_style"
             ]
         );
         assert!(entries[1].enabled, "Browse music always works");
         assert_eq!(entries[0].reason_key.as_str(), "music:no_playlist");
         assert_eq!(entries[2].reason_key.as_str(), "music:nothing_playing");
-        assert!(entries[3..].iter().all(|e| !e.enabled));
+        assert!(entries[3..6].iter().all(|e| !e.enabled));
         assert!(
-            entries[3..]
+            entries[3..6]
                 .iter()
                 .all(|e| e.reason_key.as_str() == "music:loading"),
             "waiting on Core is not the same as Core lacking the setting"
@@ -2507,6 +2853,7 @@ mod tests {
                 state: SettingsState::Failed,
                 ..Settings::default()
             },
+            look,
             &idle,
         );
         assert_eq!(failed[3].reason_key.as_str(), "music:no_answer");
@@ -2515,6 +2862,7 @@ mod tests {
                 state: SettingsState::Ready,
                 ..Settings::default()
             },
+            look,
             &idle,
         );
         assert_eq!(old_core[3].reason_key.as_str(), "music:not_supported");
@@ -2526,6 +2874,10 @@ mod tests {
                 autoplay: Some(true),
                 pause_games: Some(false),
             },
+            VisualizerOption {
+                on: false,
+                style: rules::VisualizerStyle::Mirror,
+            },
             &playing,
         );
         assert!(offered.iter().all(|e| e.enabled));
@@ -2534,6 +2886,13 @@ mod tests {
         assert_eq!(offered[4].role, crate::MenuRole::ToggleOn);
         assert_eq!(offered[5].role, crate::MenuRole::ToggleOff);
         assert_eq!(offered[3].role, crate::MenuRole::Slider);
+        // The visualizer's options are the frontend's own: never waiting
+        // on Core.
+        assert!(entries[6..].iter().all(|e| e.enabled));
+        assert_eq!(entries[6].role, crate::MenuRole::ToggleOn);
+        assert_eq!(offered[6].role, crate::MenuRole::ToggleOff);
+        assert_eq!(entries[7].label.as_str(), "visualizer:bars");
+        assert_eq!(offered[7].label.as_str(), "visualizer:mirror");
     }
 
     #[test]

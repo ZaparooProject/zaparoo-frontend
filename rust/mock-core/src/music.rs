@@ -8,6 +8,8 @@
 // their own and advance, and the notifications real Core sends around
 // them (`media.started`, `media.stopped` and `playlists.changed`, all on
 // the background slot). Tracks are short so a dev run sees one end.
+// A connection that subscribes with `media.levels.subscribe` gets
+// `media.levels` readings at about 30 Hz while the track plays.
 
 use crate::media_state::Notifier;
 use serde_json::{json, Value};
@@ -66,6 +68,7 @@ pub fn route(method: &str, params: &Value, notifier: &Notifier) -> Option<Result
         "media.active" => media_active(params).map(Ok),
         "media.active.image" => Some(active_image(params)),
         "media.control" => Some(control(params, notifier)),
+        "media.levels.subscribe" => Some(Ok(levels_subscribe(params, notifier))),
         "playlists.update" => Some(update(params, notifier)),
         "run" => {
             let script = params.get("text").and_then(Value::as_str).unwrap_or("");
@@ -788,9 +791,112 @@ pub fn update_settings(params: &Value) -> Result<(), String> {
     Ok(())
 }
 
+/// How often a subscribed connection hears the levels, as Core sends them.
+const LEVELS_INTERVAL: Duration = Duration::from_millis(33);
+/// The bands in a reading.
+const LEVEL_BANDS: usize = 16;
+
+/// `media.levels.subscribe`: turn this connection's level feed on or off.
+/// Each call replaces the last, so a resubscribe never doubles the feed.
+fn levels_subscribe(params: &Value, notifier: &Notifier) -> Value {
+    use std::sync::atomic::Ordering;
+    let enabled = params
+        .get("enabled")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let levels = notifier.levels();
+    let mut generation = levels.load(Ordering::SeqCst) + 1;
+    if (generation % 2 == 1) != enabled {
+        generation += 1;
+    }
+    levels.store(generation, Ordering::SeqCst);
+    if enabled {
+        let notifier = notifier.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(LEVELS_INTERVAL).await;
+                if notifier.closed() || notifier.levels().load(Ordering::SeqCst) != generation {
+                    return;
+                }
+                // Core stops the feed while paused or stopped.
+                if let Some(position) = with(|p| p.playing().then(|| p.position_ms())) {
+                    notifier.send("media.levels", &levels_reading(position));
+                }
+            }
+        });
+    }
+    Value::Null
+}
+
+/// A made-up reading at `position_ms`: each band swings on its own beat,
+/// the treble quieter than the bass, as music tends to be.
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "a position in milliseconds; the waveform does not need it exact"
+)]
+fn levels_reading(position_ms: u64) -> Value {
+    let t = position_ms as f32 / 1000.0;
+    let mut bands = [0.0_f32; LEVEL_BANDS];
+    for (i, band) in bands.iter_mut().enumerate() {
+        let i = i as f32;
+        let beat = (t * (2.0 + i * 0.7) + i).sin() * 0.5 + 0.5;
+        let pulse = (t * 4.0).sin().abs();
+        *band = ((0.35 + 0.45 * beat) * (0.6 + 0.4 * pulse) * (1.0 - i / 24.0)).clamp(0.0, 1.0);
+    }
+    let peak = bands.iter().copied().fold(0.0_f32, f32::max);
+    json!({ "slot": SLOT, "peak": peak, "bands": bands })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_levels_reading_has_sixteen_bands_in_range() {
+        let reading = levels_reading(12_345);
+        assert_eq!(reading["slot"], SLOT);
+        let bands = reading["bands"].as_array().cloned().unwrap_or_default();
+        assert_eq!(bands.len(), LEVEL_BANDS);
+        assert!(bands
+            .iter()
+            .filter_map(Value::as_f64)
+            .all(|v| (0.0..=1.0).contains(&v)));
+        assert!(reading["peak"].as_f64().is_some_and(|p| p > 0.0));
+    }
+
+    #[tokio::test]
+    async fn a_resubscribe_replaces_the_feed_and_an_unsubscribe_ends_it() {
+        use std::sync::atomic::Ordering;
+        let (notifier, mut rx) = Notifier::channel();
+        assert_eq!(
+            levels_subscribe(&json!({ "enabled": true }), &notifier),
+            Value::Null
+        );
+        assert_eq!(
+            notifier.levels().load(Ordering::SeqCst) % 2,
+            1,
+            "subscribed"
+        );
+        levels_subscribe(&json!({ "enabled": true }), &notifier);
+        assert_eq!(
+            notifier.levels().load(Ordering::SeqCst) % 2,
+            1,
+            "still one feed"
+        );
+        levels_subscribe(&json!({ "enabled": false }), &notifier);
+        assert_eq!(
+            notifier.levels().load(Ordering::SeqCst) % 2,
+            0,
+            "unsubscribed"
+        );
+        tokio::time::sleep(LEVELS_INTERVAL * 3).await;
+        while let Ok(message) = rx.try_recv() {
+            assert_ne!(
+                message["method"], "media.levels",
+                "nothing after unsubscribe"
+            );
+        }
+    }
 
     #[test]
     fn a_chain_splits_outside_inline_json() {

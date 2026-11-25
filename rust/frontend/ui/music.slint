@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Wizzo Pty Ltd and the Zaparoo Project contributors.
 // SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
 //
-// The music player: what Core's background slot plays, on a card with the
+// The music player: the music Core plays, on a card with the
 // Settings pages' margins, with one row of controls in the order every
 // player uses (Shuffle, Previous, Play/Pause, Next, Repeat) and the
 // progress track across the card. The open playlist and the Audio index
@@ -12,6 +12,8 @@
 // row of controls: raised surfaces pressed through `PressFeedback`, one
 // focus ring that glides between them and carries the tile focus zoom.
 // The time text and the progress cells change once a second as hard cuts.
+// The level visualizer's bars are a fixed row over the art, their heights
+// written in place as the levels move.
 
 import { Theme, Backdrop, GlassCard, Sizing, Layout, Motion } from "theme.slint";
 import { TopStatusStrip, StateCue, FastScrollRail, GlyphSource, ProgressTrack } from "chrome.slint";
@@ -20,7 +22,7 @@ import { BrowseList } from "browse_list.slint";
 import { Labels } from "labels.slint";
 import { FocusCursor } from "focus.slint";
 import { PressFeedback } from "press_feedback.slint";
-import { ContentState, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, PressOwner } from "state_types.slint";
+import { ContentState, MusicPage, MusicControl, PlaybackState, RepeatMode, MusicUnavailable, PressOwner, VisualizerStyle } from "state_types.slint";
 
 // One button of the transport row.
 export struct MusicButton {
@@ -55,6 +57,22 @@ export global MusicView {
     // The transport row and its focus.
     in-out property <[MusicButton]> buttons: [];
     in-out property <int> control-index: 2;
+    // The slot on show is Core's primary slot: an album or a disc rather
+    // than the background music.
+    in-out property <bool> primary: false;
+    // The level visualizer over the art, true while it has bars up. One
+    // level per band, lowest first, from 0 to `level-steps`; the model is
+    // fixed in size and written in place. The bars' place in the art box
+    // is solved in Rust (`zaparoo_app::music::visualizer_geometry`).
+    in-out property <bool> visualizer-on: false;
+    in-out property <VisualizerStyle> visualizer-style: VisualizerStyle.bars;
+    in-out property <[int]> levels: [];
+    in-out property <int> level-steps: 1;
+    in-out property <length> vis-x: 0px;
+    in-out property <length> vis-y: 0px;
+    in-out property <length> vis-height: 0px;
+    in-out property <length> vis-bar-width: 0px;
+    in-out property <length> vis-pitch: 0px;
     // The card, with the Settings pages' margins and as tall as the player
     // it holds, solved in Rust (`zaparoo_app::music::geometry`).
     in-out property <length> card-x: 0px;
@@ -229,7 +247,7 @@ component PlayerCard inherits Rectangle {
     clip: true;
 
     // The art: the track's cover, fading in as it lands, or the music
-    // glyph where the track has none.
+    // glyph where the track has none, with the visualizer's bars over it.
     Rectangle {
         x: MusicView.art-x;
         y: MusicView.art-y;
@@ -250,7 +268,7 @@ component PlayerCard inherits Rectangle {
                 }
             ]
         }
-        if !MusicView.has-cover: Image {
+        if !MusicView.has-cover && !MusicView.visualizer-on: Image {
             property <length> side: GlyphSource.side(MusicView.art-size * 0.5);
             x: Sizing.snap((parent.width - self.width) / 2);
             y: Sizing.snap((parent.height - self.height) / 2);
@@ -258,6 +276,21 @@ component PlayerCard inherits Rectangle {
             height: self.side;
             source: GlyphSource.glyph("icons/Music", self.side, Theme.text-label);
             image-rendering: Sizing.crt ? ImageRendering.pixelated : ImageRendering.smooth;
+        }
+        // Bars rise from the foot of the art, or grow from its middle in
+        // the mirror style. Translucent over a cover so it still shows.
+        if MusicView.visualizer-on: Rectangle {
+            for level[i] in MusicView.levels: Rectangle {
+                property <length> h: Sizing.snap(MusicView.vis-height * level / max(1, MusicView.level-steps));
+                x: MusicView.vis-x + MusicView.vis-pitch * i;
+                y: MusicView.visualizer-style == VisualizerStyle.mirror
+                    ? MusicView.vis-y + Sizing.snap((MusicView.vis-height - self.h) / 2)
+                    : MusicView.vis-y + MusicView.vis-height - self.h;
+                width: MusicView.vis-bar-width;
+                height: self.h;
+                background: Theme.accent;
+                opacity: MusicView.has-cover ? 0.75 : 1;
+            }
         }
     }
 
@@ -461,7 +494,8 @@ export component MusicScreen inherits Rectangle {
     // playlist by its own, a library folder by its folder's.
     property <string> title: root.library
         ? (MusicView.library-top ? @tr("Browse music") : MusicView.library-title)
-        : root.player || MusicView.playlist-name == "" ? @tr("Background music")
+        : root.player || MusicView.playlist-name == ""
+            ? (MusicView.primary ? @tr("Now playing") : @tr("Background music"))
         : MusicView.playlist-name;
 
     // The lists' totals, on the strip's left as a games list's is.

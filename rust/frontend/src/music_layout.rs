@@ -143,6 +143,13 @@ pub(crate) fn push_layout(view: &crate::MusicView<'_>, layout: &Layout) {
     view.set_button_gap(px(g.button_gap));
     view.set_label_y(px(g.label_y));
     view.set_label_height(px(g.label_height));
+    let vis = rules::visualizer_geometry(g.art_size);
+    view.set_vis_x(px(vis.x));
+    view.set_vis_y(px(vis.y));
+    view.set_vis_height(px(vis.height));
+    view.set_vis_bar_width(px(vis.bar_width));
+    view.set_vis_pitch(px(vis.pitch));
+    view.set_level_steps(rules::LEVEL_STEPS);
     view.set_list_x(px(layout.list.card_x));
     view.set_list_y(px(layout.list.card_y));
     view.set_list_width(px(layout.list.card_width));

@@ -379,7 +379,13 @@ fn mirror_music(primary: &App, crt: &App) {
         get_rail_letters => set_rail_letters,
         get_rail_index => set_rail_index,
         get_rail_letter => set_rail_letter,
+        get_primary => set_primary,
+        get_visualizer_on => set_visualizer_on,
+        get_visualizer_style => set_visualizer_style,
     );
+    // The level model is written in place at the frame rate: both heads
+    // share the one model rather than copying it.
+    target.set_levels(source.get_levels());
     let cover = source.get_cover();
     if !same_image(&target.get_cover(), &cover) {
         target.set_cover(cover);

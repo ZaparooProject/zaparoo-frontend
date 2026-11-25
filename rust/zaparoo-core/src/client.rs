@@ -24,15 +24,16 @@ use crate::media_types::{
     MediaActiveParams, MediaAssetParams, MediaAssetResult, MediaBrowseIndexParams,
     MediaBrowseIndexResult, MediaBrowseParams, MediaBrowseResult, MediaControlParams,
     MediaHistoryLatestResult, MediaHistoryParams, MediaHistoryResult, MediaHistoryTopParams,
-    MediaHistoryTopResult, MediaImageParams, MediaImageResult, MediaIndexParams, MediaLookupParams,
-    MediaLookupResult, MediaMetaParams, MediaMetaResult, MediaMetaUpdateParams,
-    MediaRecommendedParams, MediaRecommendedResult, MediaResult, MediaScrapeParams,
-    MediaSearchParams, MediaSearchResult, MediaSimilarParams, MediaSimilarResult, MediaTagsParams,
-    MediaTagsResult, MediaTagsUpdateParams, MediaTagsUpdateResult, MediaVersionsParams,
-    MediaVersionsResult, OnlineStatusResult, PairStartResult, PlaylistsUpdateParams, ReadersResult,
-    ReadersWriteParams, RemoteActivityResult, RunParams, ScrapersResult, ScrapingStatusResponse,
-    SettingsResult, SystemsParams, SystemsResult, TokensHistoryResult, TokensResult,
-    UpdateSettingsParams, VersionResult,
+    MediaHistoryTopResult, MediaImageParams, MediaImageResult, MediaIndexParams, MediaLevels,
+    MediaLevelsSubscribeParams, MediaLookupParams, MediaLookupResult, MediaMetaParams,
+    MediaMetaResult, MediaMetaUpdateParams, MediaRecommendedParams, MediaRecommendedResult,
+    MediaResult, MediaScrapeParams, MediaSearchParams, MediaSearchResult, MediaSimilarParams,
+    MediaSimilarResult, MediaTagsParams, MediaTagsResult, MediaTagsUpdateParams,
+    MediaTagsUpdateResult, MediaVersionsParams, MediaVersionsResult, OnlineStatusResult,
+    PairStartResult, PlaylistsUpdateParams, ReadersResult, ReadersWriteParams,
+    RemoteActivityResult, RunParams, ScrapersResult, ScrapingStatusResponse, SettingsResult,
+    SystemsParams, SystemsResult, TokensHistoryResult, TokensResult, UpdateSettingsParams,
+    VersionResult,
 };
 use crate::profile_types::{
     ActiveProfile, ClientsResult, ExtendPlaytimeParams, KioskState, NewProfileParams,
@@ -163,6 +164,8 @@ struct RpcResponse {
 const LAUNCH_REPAIR_CATEGORY: &str = "launch_repair";
 /// JSON-RPC's "method not found" error code.
 const METHOD_NOT_FOUND: i64 = -32601;
+/// The visualizer's level push, routed to `Client::subscribe_levels`.
+const MEDIA_LEVELS: &str = "media.levels";
 /// Core's `error.data.category` for a request refused because something
 /// else holds what it needs.
 const BUSY_CATEGORY: &str = "busy";
@@ -374,6 +377,7 @@ fn handle_incoming(
     resp: RpcResponse,
     pending: &PendingMap,
     notifications: &broadcast::Sender<Notification>,
+    levels: &watch::Sender<MediaLevels>,
 ) {
     if let Some(id) = resp.id {
         let sender = pending.lock().unwrap().remove(&id);
@@ -386,6 +390,15 @@ fn handle_incoming(
             let _ = tx.send(result);
         }
     } else if let Some(method) = resp.method {
+        // Levels arrive about 30 times a second per playing slot. They go
+        // to their own channel, read at the visualizer's own pace, so they
+        // never crowd the notification stream or lag its receivers.
+        if method == MEDIA_LEVELS {
+            if let Some(params) = resp.params.as_ref() {
+                levels.send_if_modified(|current| current.apply(params));
+            }
+            return;
+        }
         let _ = notifications.send(Notification {
             method,
             params: resp.params.unwrap_or(Value::Null),
@@ -407,6 +420,7 @@ async fn serve_session(
     mut outgoing: mpsc::UnboundedReceiver<String>,
     pending: &PendingMap,
     notifications: &broadcast::Sender<Notification>,
+    levels: &watch::Sender<MediaLevels>,
 ) -> SessionEnd {
     let (mut write, mut read) = socket.split();
     loop {
@@ -440,7 +454,7 @@ async fn serve_session(
                             if current.as_ref() == Some(transport)
                                 && !target.has_changed().unwrap_or(true)
                             {
-                                handle_incoming(response, pending, notifications);
+                                handle_incoming(response, pending, notifications, levels);
                             }
                         }
                     }
@@ -543,6 +557,8 @@ pub struct Client {
     tx: OutboundSlot,
     pending: PendingMap,
     notifications: broadcast::Sender<Notification>,
+    /// The latest `media.levels` of each slot, kept off `notifications`.
+    levels: Arc<watch::Sender<MediaLevels>>,
     pub connection: Arc<watch::Sender<ConnectionState>>,
     transport: watch::Sender<Option<Transport>>,
 }
@@ -561,6 +577,10 @@ impl Client {
         Self::with_optional_transport(None, runtime)
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one connection task that owns every channel a session feeds"
+    )]
     fn with_optional_transport(
         transport: Option<Transport>,
         runtime: &tokio::runtime::Handle,
@@ -575,11 +595,14 @@ impl Client {
         let tx_slot_clone = tx_slot.clone();
         let (notification_tx, _) = broadcast::channel(64);
         let notification_tx_clone = notification_tx.clone();
+        let levels = Arc::new(watch::channel(MediaLevels::default()).0);
+        let levels_clone = levels.clone();
 
         let client = Arc::new(Self {
             tx: tx_slot,
             pending,
             notifications: notification_tx,
+            levels,
             connection: connection_arc,
             transport: transport_tx,
         });
@@ -666,9 +689,11 @@ impl Client {
 
                         let ended = serve_session(
                             ws_stream, &transport, &mut transport_rx, msg_rx,
-                            &pending_clone, &notification_tx_clone,
+                            &pending_clone, &notification_tx_clone, &levels_clone,
                         ).await;
                         teardown_session(&tx_slot_clone, &pending_clone);
+                        // A subscription ends with its connection.
+                        levels_clone.send_replace(MediaLevels::default());
                         match ended {
                             SessionEnd::Replaced => continue,
                             SessionEnd::Closed => return,
@@ -706,6 +731,7 @@ impl Client {
                 return false;
             }
             teardown_session(&self.tx, &self.pending);
+            self.levels.send_replace(MediaLevels::default());
             self.connection.send_if_modified(|state| {
                 if matches!(state, ConnectionState::Connected) {
                     *state = ConnectionState::Reconnecting;
@@ -734,6 +760,13 @@ impl Client {
 
     pub fn subscribe_notifications(&self) -> broadcast::Receiver<Notification> {
         self.notifications.subscribe()
+    }
+
+    /// The latest `media.levels` of each slot. Core sends them only to a
+    /// connection that asked (`media_levels_subscribe`); they reset to
+    /// silence when the connection ends.
+    pub fn subscribe_levels(&self) -> watch::Receiver<MediaLevels> {
+        self.levels.subscribe()
     }
 
     async fn call<P: Serialize>(&self, method: &str, params: &P) -> Result<Value, ClientError> {
@@ -1410,6 +1443,18 @@ impl Client {
         Ok(())
     }
 
+    /// Turn the `media.levels` push on or off for this connection
+    /// (`media.levels.subscribe`). A Core without it answers method not
+    /// found (`ClientError::is_method_not_found`).
+    pub async fn media_levels_subscribe(&self, enabled: bool) -> Result<(), ClientError> {
+        self.call(
+            "media.levels.subscribe",
+            &MediaLevelsSubscribeParams { enabled },
+        )
+        .await?;
+        Ok(())
+    }
+
     /// Shuffle an open playlist or change its repeat mode
     /// (`playlists.update`). The new state arrives as `playlists.changed`.
     pub async fn playlists_update(&self, params: PlaylistsUpdateParams) -> Result<(), ClientError> {
@@ -1792,6 +1837,7 @@ mod tests {
                     outgoing_rx,
                     &pending,
                     &notifications,
+                    &watch::channel(MediaLevels::default()).0,
                 )
                 .await
             });
@@ -1814,6 +1860,7 @@ mod tests {
             tx: Arc::new(Mutex::new(None)),
             pending: PendingMap::default(),
             notifications: notifications.clone(),
+            levels: Arc::new(watch::channel(MediaLevels::default()).0),
             connection: Arc::new(watch::channel(ConnectionState::Connecting).0),
             transport: watch::channel(None).0,
         };
@@ -1837,11 +1884,53 @@ mod tests {
             "id": "refused", "error": {"message": "not allowed"}
         }))
         .unwrap();
-        handle_incoming(response, &pending, &notifications);
+        handle_incoming(
+            response,
+            &pending,
+            &notifications,
+            &watch::channel(MediaLevels::default()).0,
+        );
         assert!(
             !rx.await.unwrap().unwrap_err().is_transport(),
             "Core's own refusal"
         );
+    }
+
+    /// Levels skip the notification stream: a burst of them must not lag
+    /// the stores that fold every other push.
+    #[test]
+    #[allow(clippy::unwrap_used, reason = "test constructs known-good JSON")]
+    fn levels_go_to_their_own_channel() {
+        let pending = PendingMap::default();
+        let (notifications, mut rx) = broadcast::channel(1);
+        let (levels, levels_rx) = watch::channel(MediaLevels::default());
+        let push = |method: &str, params: Value| -> RpcResponse {
+            serde_json::from_value(serde_json::json!({
+                "jsonrpc": "2.0", "method": method, "params": params
+            }))
+            .unwrap()
+        };
+        for _ in 0..3 {
+            handle_incoming(
+                push(
+                    "media.levels",
+                    serde_json::json!({"slot": "background", "peak": 0.5, "bands": [0.25]}),
+                ),
+                &pending,
+                &notifications,
+                &levels,
+            );
+        }
+        assert!(rx.try_recv().is_err(), "no level reached the stream");
+        assert_eq!(levels_rx.borrow().background.seq, 3);
+        assert!((levels_rx.borrow().background.bands[0] - 0.25).abs() < f32::EPSILON);
+        handle_incoming(
+            push("media.started", serde_json::json!({"slot": "background"})),
+            &pending,
+            &notifications,
+            &levels,
+        );
+        assert_eq!(rx.try_recv().unwrap().method, "media.started");
     }
 
     #[allow(clippy::unwrap_used, reason = "test constructs known-good JSON")]
@@ -2049,6 +2138,7 @@ mod tests {
             notifications,
             connection: Arc::new(connection),
             transport: watch::channel(None).0,
+            levels: Arc::new(watch::channel(MediaLevels::default()).0),
         });
         let barrier = Arc::new(tokio::sync::Barrier::new(2));
 
@@ -2088,6 +2178,7 @@ mod tests {
             notifications,
             connection: Arc::new(connection),
             transport: watch::channel(None).0,
+            levels: Arc::new(watch::channel(MediaLevels::default()).0),
         };
         (client, msg_rx, pending)
     }

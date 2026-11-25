@@ -799,6 +799,14 @@ pub struct SettingsState {
     /// range (-8..=2, 1/64-pixel-period steps, 0 = unity).
     #[serde(default)]
     pub crt_h_size: i32,
+    /// The music player's visualizer over the art box, drawn from Core's
+    /// level feed where Core has one.
+    #[serde(default = "default_music_visualizer")]
+    pub music_visualizer: bool,
+    /// The visualizer's look (`zaparoo_app::music::VisualizerStyle`):
+    /// `bars` or `mirror`. Anything unknown reads as `bars`.
+    #[serde(default = "default_music_visualizer_style")]
+    pub music_visualizer_style: String,
 }
 
 impl Default for SettingsState {
@@ -847,8 +855,18 @@ impl Default for SettingsState {
             crt_h_offset: 0,
             crt_v_offset: 0,
             crt_h_size: 0,
+            music_visualizer: default_music_visualizer(),
+            music_visualizer_style: default_music_visualizer_style(),
         }
     }
+}
+
+fn default_music_visualizer() -> bool {
+    true
+}
+
+fn default_music_visualizer_style() -> String {
+    "bars".into()
 }
 
 fn default_interface_profile() -> String {
@@ -1288,6 +1306,8 @@ mod tests {
                 crt_h_offset: -3,
                 crt_v_offset: 2,
                 crt_h_size: -5,
+                music_visualizer: false,
+                music_visualizer_style: "mirror".into(),
             },
             rename: RenameState {
                 target: HubTarget {
@@ -1626,6 +1646,8 @@ resolution = "1920x1080"
         assert_eq!(state.settings.crt_h_size, 0);
         assert!(state.settings.show_tags);
         assert_eq!(state.settings.list_left_right, "page");
+        assert!(state.settings.music_visualizer);
+        assert_eq!(state.settings.music_visualizer_style, "bars");
     }
 
     #[test]
