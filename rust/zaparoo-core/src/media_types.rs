@@ -1775,8 +1775,7 @@ pub struct SettingsResult {
     pub readers_connect: Option<Vec<crate::readers_types::ReaderConnection>>,
     /// Per-driver overrides; a driver missing here runs on its defaults.
     #[serde(default)]
-    pub readers_drivers:
-        Option<std::collections::BTreeMap<String, crate::readers_types::DriverConfig>>,
+    pub readers_drivers: Option<Vec<crate::readers_types::DriverConfig>>,
     #[serde(default)]
     pub audio_scan_feedback: Option<bool>,
     #[serde(default)]
@@ -2262,10 +2261,9 @@ pub struct UpdateSettingsParams {
     /// Replaces the whole manual connection list.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub readers_connect: Option<Vec<crate::readers_types::ReaderConnection>>,
-    /// Replaces the named drivers' overrides; others are untouched.
+    /// Replaces the whole driver list.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub readers_drivers:
-        Option<std::collections::BTreeMap<String, crate::readers_types::DriverConfig>>,
+    pub readers_drivers: Option<Vec<crate::readers_types::DriverConfig>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub audio_scan_feedback: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]

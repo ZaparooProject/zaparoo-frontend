@@ -9,7 +9,6 @@
 // A change is shown at once and sent; a refusal reports and fetches
 // Core's answer again.
 
-use std::collections::BTreeMap;
 use std::future::Future;
 
 use zaparoo_app::readers::{self as readers_rules, Mode};
@@ -20,7 +19,9 @@ use zaparoo_core::profile_types::{
     NewProfileParams, PairedClient, PlaytimeLimits, Profile, UpdatePlaytimeLimitsParams,
     UpdateProfileParams,
 };
-use zaparoo_core::readers_types::{DriverConfig, DriverInfo, Mapping, PortInfo, ReaderConnection};
+use zaparoo_core::readers_types::{
+    find_driver, set_driver, DriverInfo, Mapping, PortInfo, ReaderConnection,
+};
 
 use crate::router::{lock, Ctx, Shared};
 use crate::{App, DialogButton, DialogKind, SettingsPage, SettingsRow};
@@ -174,9 +175,9 @@ impl Model {
         let config = self
             .settings
             .as_ref()
-            .and_then(|s| s.readers_drivers.as_ref())
-            .and_then(|map| map.get(driver))
-            .copied()
+            .and_then(|s| s.readers_drivers.as_deref())
+            .and_then(|list| find_driver(list, driver))
+            .cloned()
             .unwrap_or_default();
         readers_rules::Config {
             enabled: config.enabled,
@@ -1030,19 +1031,24 @@ fn set_driver_mode(ctx: &Ctx, app: &App, index: usize, mode: Mode) {
         return;
     };
     let config = readers_rules::config_for(mode, Model::defaults(&driver));
-    let config = DriverConfig {
-        enabled: config.enabled,
-        auto_detect: config.auto_detect,
+    // Core replaces the whole list, so the update carries every driver's
+    // entry with this one changed. Before the settings have loaded there is
+    // no list to change, and sending one would wipe the others.
+    let Some(mut list) = lock(&ctx.shared)
+        .core
+        .settings
+        .as_ref()
+        .map(|s| s.readers_drivers.clone().unwrap_or_default())
+    else {
+        return;
     };
-    let id = driver.id.clone();
+    set_driver(&mut list, &driver.id, config.enabled, config.auto_detect);
     let params = UpdateSettingsParams {
-        readers_drivers: Some(BTreeMap::from([(id.clone(), config)])),
+        readers_drivers: Some(list.clone()),
         ..UpdateSettingsParams::default()
     };
     update(ctx, app, params, move |s| {
-        s.readers_drivers
-            .get_or_insert_with(BTreeMap::new)
-            .insert(id, config);
+        s.readers_drivers = Some(list);
     });
 }
 

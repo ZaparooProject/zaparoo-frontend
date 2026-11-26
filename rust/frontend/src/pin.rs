@@ -12,6 +12,7 @@
 
 use std::cell::RefCell;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use zaparoo_app::pin as rules;
@@ -374,19 +375,31 @@ fn open(ctx: &Ctx, app: &App) {
     }
 }
 
+/// A scan wait that fails sooner than this (Core refusing it, no
+/// connection) is retried only after this long, so it cannot spin.
+const SCAN_RETRY: Duration = Duration::from_secs(1);
+
 /// Wait for a switch card. Core answers with the profile it belongs to.
+/// Core ends each wait after its request timeout, so the panel starts the
+/// next one for as long as it stays open.
 fn start_scan(ctx: &Ctx, app: &App) {
     let client = ctx.store.client();
     let ctx2 = ctx.clone();
     let weak = app.as_weak();
     let ticket = with(|m| m.ticket);
     let task = ctx.handle.spawn(async move {
+        let started = Instant::now();
         let result = client
             .profiles_verify(VerifyProfileParams {
                 scan: true,
                 ..VerifyProfileParams::default()
             })
             .await;
+        if result.is_err() {
+            if let Some(wait) = SCAN_RETRY.checked_sub(started.elapsed()) {
+                tokio::time::sleep(wait).await;
+            }
+        }
         let _ = weak.upgrade_in_event_loop(move |app| {
             if !is_open(&app) || with(|m| m.ticket) != ticket {
                 return;
@@ -394,9 +407,11 @@ fn start_scan(ctx: &Ctx, app: &App) {
             match result {
                 Ok(verified) => scanned(&ctx2, &app, &verified),
                 Err(error) => {
-                    // A wait that ended without a card (a timeout, a card
-                    // that is not a switch card) leaves the pad as it is.
+                    // A wait that ended without a switch card (a timeout,
+                    // another card, a dropped connection) leaves the pad as
+                    // it is and waits again.
                     tracing::debug!("switch card wait ended: {}", error.message);
+                    start_scan(&ctx2, &app);
                 }
             }
         });
@@ -484,15 +499,12 @@ fn refused(app: &App, error: PinError, text: &str) {
     render(app);
     // The message gives the caption line back to the standing hint.
     let weak = app.as_weak();
-    slint::Timer::single_shot(
-        std::time::Duration::from_millis(rules::MESSAGE_MS),
-        move || {
-            let Some(app) = weak.upgrade() else { return };
-            if with(|m| m.message) == message {
-                clear_message(&app);
-            }
-        },
-    );
+    slint::Timer::single_shot(Duration::from_millis(rules::MESSAGE_MS), move || {
+        let Some(app) = weak.upgrade() else { return };
+        if with(|m| m.message) == message {
+            clear_message(&app);
+        }
+    });
 }
 
 fn clear_message(app: &App) {

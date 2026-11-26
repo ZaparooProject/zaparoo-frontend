@@ -61,7 +61,12 @@ pub fn route(method: &str, params: &Value, notifier: &Notifier) -> Option<Result
 /// off, then every stored manual connection, none of which opens.
 fn readers_response() -> Value {
     let setting = |key: &str| crate::fixtures::stored_setting(key).unwrap_or(Value::Null);
-    let pn532 = &setting("readersDrivers")["pn532"];
+    let drivers = setting("readersDrivers");
+    let pn532 = drivers
+        .as_array()
+        .and_then(|list| list.iter().find(|d| d["id"] == "pn532"))
+        .cloned()
+        .unwrap_or(Value::Null);
     let detected = setting("readersAutoDetect") != false
         && pn532["enabled"] != false
         && pn532["autoDetect"] != false;
@@ -304,7 +309,7 @@ pub fn settings_defaults() -> Map<String, Value> {
     map.insert("readersScanIgnoreOnConnect".into(), json!(false));
     map.insert("mediaDefaultRegions".into(), json!(["us", "eu"]));
     map.insert("mediaDefaultLangs".into(), json!(["en"]));
-    map.insert("readersDrivers".into(), json!({}));
+    map.insert("readersDrivers".into(), json!([]));
     map.insert("launchGuardEnabled".into(), json!(false));
     map.insert("launchGuardTimeout".into(), json!(15.0));
     map.insert("launchGuardDelay".into(), json!(0.0));
