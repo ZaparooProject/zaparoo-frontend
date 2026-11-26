@@ -243,16 +243,7 @@ pub fn settings_update_response(params: &Value) -> Result<Value, String> {
             return;
         };
         for (k, v) in params {
-            if k == "readersDrivers" {
-                // Update replaces the given drivers' entries only.
-                if let (Some(next), Some(Value::Object(cur))) =
-                    (v.as_object(), stored.get_mut("readersDrivers"))
-                {
-                    for (driver, config) in next {
-                        cur.insert(driver.clone(), config.clone());
-                    }
-                }
-            } else if STORED_KEYS.contains(&k.as_str()) || stored.contains_key(k) {
+            if STORED_KEYS.contains(&k.as_str()) || stored.contains_key(k) {
                 stored.insert(k.clone(), v.clone());
             }
         }

@@ -28,15 +28,59 @@ impl ReaderConnection {
     }
 }
 
-/// One driver's overrides (`readersDrivers`). A field left `None` runs on
-/// the driver's default.
-#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+/// One driver's entry in `readersDrivers`. A field left `None` runs on the
+/// driver's default. An update replaces Core's whole list, so the fields
+/// this frontend does not edit (scan mode, the optical drive's options) are
+/// kept as Core sent them and go back unchanged.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct DriverConfig {
+    pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_detect: Option<bool>,
+    #[serde(flatten)]
+    pub other: serde_json::Map<String, serde_json::Value>,
+}
+
+/// A driver ID as Core compares it: case folded, underscores dropped.
+fn normalize_driver_id(id: &str) -> String {
+    id.replace('_', "").to_lowercase()
+}
+
+/// The index of a driver's entry: one with its exact ID, else the first
+/// whose ID Core reads as the same driver.
+fn driver_index(list: &[DriverConfig], id: &str) -> Option<usize> {
+    list.iter().position(|d| d.id == id).or_else(|| {
+        let id = normalize_driver_id(id);
+        list.iter().position(|d| normalize_driver_id(&d.id) == id)
+    })
+}
+
+/// A driver's entry in a `readersDrivers` list.
+pub fn find_driver<'a>(list: &'a [DriverConfig], id: &str) -> Option<&'a DriverConfig> {
+    driver_index(list, id).map(|i| &list[i])
+}
+
+/// Sets a driver's `enabled` and `autoDetect` in a `readersDrivers` list,
+/// keeping the entry's other fields and every other driver's entry, and
+/// adding an entry when the driver has none.
+pub fn set_driver(
+    list: &mut Vec<DriverConfig>,
+    id: &str,
+    enabled: Option<bool>,
+    auto_detect: Option<bool>,
+) {
+    let index = driver_index(list, id).unwrap_or_else(|| {
+        list.push(DriverConfig {
+            id: id.to_string(),
+            ..DriverConfig::default()
+        });
+        list.len() - 1
+    });
+    list[index].enabled = enabled;
+    list[index].auto_detect = auto_detect;
 }
 
 /// One supported driver (`readers.drivers`).
@@ -225,10 +269,35 @@ mod tests {
     #[test]
     fn driver_overrides_omit_defaults() -> Result<(), serde_json::Error> {
         let v = serde_json::to_value(DriverConfig {
+            id: "pn532".into(),
             enabled: Some(true),
-            auto_detect: None,
+            ..DriverConfig::default()
         })?;
-        assert_eq!(v, json!({"enabled": true}));
+        assert_eq!(v, json!({"id": "pn532", "enabled": true}));
+        Ok(())
+    }
+
+    #[test]
+    fn set_driver_keeps_every_other_field() -> Result<(), serde_json::Error> {
+        let mut list: Vec<DriverConfig> = serde_json::from_value(json!([
+            {"id": "optical", "keepReading": true, "launchOrder": "disc_first", "audioCdLauncher": "Mpv"},
+            {"id": "PN532", "enabled": false, "scanMode": "hold"}
+        ]))?;
+        set_driver(&mut list, "pn532", Some(true), None);
+        set_driver(&mut list, "ccid", Some(false), Some(false));
+        assert_eq!(
+            serde_json::to_value(&list)?,
+            json!([
+                {"id": "optical", "keepReading": true, "launchOrder": "disc_first", "audioCdLauncher": "Mpv"},
+                {"id": "PN532", "enabled": true, "scanMode": "hold"},
+                {"id": "ccid", "enabled": false, "autoDetect": false}
+            ])
+        );
+        assert_eq!(
+            find_driver(&list, "pn532").and_then(|d| d.enabled),
+            Some(true)
+        );
+        assert!(find_driver(&list, "file").is_none());
         Ok(())
     }
 
